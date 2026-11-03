@@ -70,3 +70,298 @@ h2 {
 .error {
   color: var(--alert);
 }
+
+/* --- M2: Formulare, Lobby, Takt ------------------------------------------- */
+
+h1.small {
+  font-size: 1.8rem;
+  margin-top: 2vh;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-weight: 600;
+}
+
+input,
+select,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+input,
+select {
+  padding: 10px 12px;
+  border: 1.5px solid var(--pencil);
+  border-radius: 12px 14px 12px 16px;
+  background: rgb(255 255 255 / 0.6);
+  font-size: 1.05rem;
+}
+
+.code-input {
+  font-size: 1.6rem;
+  letter-spacing: 0.4em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+button {
+  padding: 10px 16px;
+  border: 1.5px solid var(--pencil);
+  border-radius: 14px 18px 14px 20px;
+  background: rgb(255 255 255 / 0.5);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--chick);
+  font-weight: 700;
+}
+
+button.big {
+  width: min(100%, 360px);
+  padding: 16px;
+  font-size: 1.2rem;
+}
+
+button.link {
+  border: none;
+  background: none;
+  padding: 4px;
+  text-decoration: underline;
+  color: var(--pencil);
+}
+
+.or {
+  text-align: center;
+  color: var(--pencil);
+  font-style: italic;
+}
+
+.hint {
+  color: var(--pencil);
+  font-size: 0.92rem;
+  margin: 0 0 8px;
+}
+
+.note {
+  color: var(--pencil);
+  font-style: italic;
+}
+
+.room-code {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  text-align: left;
+}
+
+.qr {
+  width: 132px;
+  height: 132px;
+  flex: none;
+}
+
+.qr svg {
+  width: 100%;
+  height: 100%;
+}
+
+.code {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 2.4rem;
+  letter-spacing: 0.15em;
+  font-weight: 600;
+}
+
+.players {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+}
+
+.players li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px dashed rgb(107 93 74 / 0.35);
+}
+
+.players li.away {
+  opacity: 0.55;
+}
+
+.seat {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.5px solid var(--pencil);
+  display: grid;
+  place-items: center;
+  font-size: 0.85rem;
+  flex: none;
+}
+
+.players .name {
+  flex: 1;
+}
+
+.players .actions {
+  display: flex;
+  gap: 4px;
+}
+
+.players .actions button {
+  padding: 4px 10px;
+}
+
+.tag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgb(126 143 85 / 0.2);
+  font-size: 0.75rem;
+}
+
+fieldset {
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+legend {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.check.later {
+  color: var(--pencil);
+}
+
+.banner {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 8px 16px;
+  padding-top: max(8px, env(safe-area-inset-top));
+  background: #efe2bf;
+  text-align: center;
+  font-size: 0.95rem;
+}
+
+.toast {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 20;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--ink);
+  color: var(--paper);
+  text-align: center;
+}
+
+/* Rundentakt */
+
+.rounds {
+  justify-content: center;
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 360px;
+}
+
+.egg {
+  font-size: 7rem;
+  line-height: 1;
+  margin: 12px 0;
+}
+
+.countdown {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 3.6rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.countdown.small {
+  font-size: 2rem;
+}
+
+.stage.next {
+  animation: pulse 1s ease-in-out infinite alternate;
+}
+
+.weiter {
+  font-family: 'Fraunces', Georgia, serif;
+  font-style: italic;
+  font-weight: 600;
+  font-size: 4.5rem;
+  color: var(--alert);
+}
+
+@keyframes pulse {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.04);
+  }
+}
+
+.paused {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(247 240 222 / 0.85);
+  font-family: 'Fraunces', Georgia, serif;
+  font-style: italic;
+  font-size: 3rem;
+  pointer-events: none;
+}
+
+.host-controls {
+  position: fixed;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  z-index: 5;
+}
+
+.host-controls button {
+  padding: 6px 12px;
+  font-size: 0.9rem;
+}

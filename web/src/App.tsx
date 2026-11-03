@@ -1,36 +1,33 @@
-import { useEffect, useState } from 'react';
-import { checkConnection, type ConnectionStatus } from './connection.ts';
+import { useEffect } from 'react';
+import { useGameState } from './net/hooks.ts';
+import { showPath } from './routing.ts';
+import { ConnectionBanner } from './screens/ConnectionBanner.tsx';
+import { ErrorToast } from './screens/ErrorToast.tsx';
+import { Home } from './screens/Home.tsx';
+import { Lobby } from './screens/Lobby.tsx';
+import { Rounds } from './screens/Rounds.tsx';
+import { Homecoming } from './screens/Homecoming.tsx';
 
-/** Platzhalter-Startseite für M1: zeigt, ob Server und Uhrabgleich funktionieren. */
 export function App() {
-  const [status, setStatus] = useState<ConnectionStatus | null>(null);
+  const { room, status, closedReason } = useGameState();
 
-  useEffect(() => checkConnection((s) => setStatus({ ...s })), []);
+  // Im Raum zeigt die Adresse den Raumcode – Neuladen und Teilen funktionieren so.
+  useEffect(() => {
+    if (room) showPath(`/r/${room.code}`);
+    else if (closedReason) showPath('/');
+  }, [room, closedReason]);
+
+  let screen;
+  if (!room) screen = <Home />;
+  else if (room.phase === 'lobby') screen = <Lobby room={room} />;
+  else if (room.phase === 'rounds') screen = <Rounds room={room} />;
+  else screen = <Homecoming room={room} />;
 
   return (
-    <main className="paper">
-      <h1>Kuckuckskind</h1>
-      <p className="lead">Bald schlüpft hier ein Küken.</p>
-      <section className="card" aria-live="polite">
-        <h2>Technik-Check</h2>
-        <p>
-          Server:{' '}
-          <strong>
-            {status?.state === 'open'
-              ? 'verbunden'
-              : status?.state === 'closed'
-                ? 'getrennt'
-                : 'verbinde …'}
-          </strong>
-        </p>
-        {status?.clock && (
-          <p>
-            Uhr-Versatz: {Math.round(status.clock.offset)} ms · Laufzeit:{' '}
-            {Math.round(status.clock.rtt)} ms
-          </p>
-        )}
-        {status?.error && <p className="error">{status.error}</p>}
-      </section>
-    </main>
+    <>
+      <ConnectionBanner status={status} />
+      {screen}
+      <ErrorToast />
+    </>
   );
 }

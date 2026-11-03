@@ -1,12 +1,22 @@
 import { readEnv } from './env.ts';
 import { createLogger } from './log.ts';
 import { createApp } from './app.ts';
+import { DynamoRoomStore, MemoryRoomStore } from './rooms/store.ts';
 
 const env = readEnv();
 const log = createLogger(env.LOG_LEVEL, { stage: env.STAGE });
-const app = createApp({ env, log });
+const store = env.ROOMS_TABLE ? new DynamoRoomStore(env.ROOMS_TABLE, log) : new MemoryRoomStore();
+const app = createApp({ env, log, store });
 
-app.http.listen(env.PORT, () => log.info('server gestartet', { port: env.PORT }));
+try {
+  await app.rooms.restore();
+} catch (err) {
+  log.error('räume konnten nicht geladen werden', { err: String(err) });
+}
+
+app.http.listen(env.PORT, () =>
+  log.info('server gestartet', { port: env.PORT, store: env.ROOMS_TABLE ? 'dynamodb' : 'memory' }),
+);
 
 const shutdown = (signal: string) => {
   log.info('server fährt herunter', { signal });

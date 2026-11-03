@@ -132,6 +132,8 @@ export class GameStack extends cdk.Stack {
 
     const container = taskDef.addContainer('server', {
       image,
+      // Zeit, um beim Herunterfahren die Raum-Snapshots zu schreiben.
+      stopTimeout: cdk.Duration.seconds(20),
       portMappings: [{ containerPort: 8080 }],
       environment: {
         PORT: '8080',
