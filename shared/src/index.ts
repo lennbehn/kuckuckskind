@@ -6,3 +6,5 @@ export * from './modules/types.ts';
 export * from './modules/registry.ts';
 export * from './game/seating.ts';
 export * from './game/timeline.ts';
+export * from './care/detectors.ts';
+export * from './game/roles.ts';

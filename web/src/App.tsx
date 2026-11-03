@@ -7,6 +7,7 @@ import { Home } from './screens/Home.tsx';
 import { Lobby } from './screens/Lobby.tsx';
 import { Rounds } from './screens/Rounds.tsx';
 import { Homecoming } from './screens/Homecoming.tsx';
+import { Hatching } from './screens/Hatching.tsx';
 
 export function App() {
   const { room, status, closedReason } = useGameState();
@@ -20,6 +21,7 @@ export function App() {
   let screen;
   if (!room) screen = <Home />;
   else if (room.phase === 'lobby') screen = <Lobby room={room} />;
+  else if (room.phase === 'hatching') screen = <Hatching room={room} />;
   else if (room.phase === 'rounds') screen = <Rounds room={room} />;
   else screen = <Homecoming room={room} />;
 

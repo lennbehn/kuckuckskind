@@ -1,7 +1,16 @@
 import { z } from 'zod';
-import { HostSettingsSchema, RoomPhaseSchema, TimelineSchema } from '@kuckuckskind/shared';
+import {
+  CareKindSchema,
+  CareMethodSchema,
+  DeviceCalibrationSchema,
+  HostSettingsSchema,
+  RoleSchema,
+  RoomPhaseSchema,
+  TimelineSchema,
+} from '@kuckuckskind/shared';
 
-export const SNAPSHOT_VERSION = 1;
+/** Bei inkompatiblen Änderungen erhöhen; ältere Snapshots werden dann verworfen. */
+export const SNAPSHOT_VERSION = 2;
 
 /** Speicherbarer Zustand eines Raums (DynamoDB). Sitzungs-Tokens nur als Hash. */
 export const RoomSnapshotSchema = z.object({
@@ -24,5 +33,11 @@ export const RoomSnapshotSchema = z.object({
   settings: HostSettingsSchema,
   timeline: TimelineSchema.nullable(),
   finishedAt: z.number().nullable(),
+  hatched: z.record(z.string(), z.partialRecord(CareKindSchema, CareMethodSchema)),
+  calibrations: z.record(z.string(), DeviceCalibrationSchema),
+  hatch: z.object({ at: z.number(), revealEndsAt: z.number() }).nullable(),
+  /** Geheim – verlässt den Server nie. */
+  roles: z.record(z.string(), RoleSchema).nullable(),
+  seed: z.number().int().nullable(),
 });
 export type RoomSnapshot = z.infer<typeof RoomSnapshotSchema>;

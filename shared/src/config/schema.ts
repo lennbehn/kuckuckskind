@@ -355,6 +355,41 @@ export const GameConfigSchema = z
       { label: 'Sensoren' },
     ),
 
+    hatching: group(
+      {
+        rockGentleMs: int(1500, 200, 10000, {
+          label: 'Sanftes Wiegen nötig',
+          unit: 'ms',
+          description: 'So lange muss beim Ausbrüten sanft gewiegt werden.',
+        }),
+        coverHoldMs: int(1000, 100, 10000, { label: 'Zudecken halten', unit: 'ms' }),
+        rockCalibrationMs: int(2500, 500, 10000, {
+          label: 'Messdauer Wiegen',
+          unit: 'ms',
+          description: 'Bewegung, aus der die Empfindlichkeit des Geräts bestimmt wird.',
+        }),
+        rockScaleMin: num(0.4, 0.1, 1, { label: 'Empfindlichkeit mindestens', step: 0.05 }),
+        rockScaleMax: num(2.5, 1, 5, { label: 'Empfindlichkeit höchstens', step: 0.05 }),
+        fallbackAfterSeconds: num(12, 3, 60, {
+          label: 'Ersatz anbieten nach',
+          unit: 's',
+          description: 'Klappt eine Pflege so lange nicht, erscheint die Ersatz-Bedienung.',
+        }),
+        fallbackHoldMs: int(1000, 200, 5000, { label: 'Ersatz-Taste halten', unit: 'ms' }),
+        coverFallbackTouchPoints: int(2, 1, 5, {
+          label: 'Zudecken-Ersatz: Finger',
+          description: 'Erkennt ein Gerät die ganze Hand nicht, reichen so viele Finger.',
+        }),
+        hatchAnimationMs: int(2500, 500, 10000, { label: 'Schlüpf-Animation', unit: 'ms' }),
+        settleMs: int(3000, 0, 20000, {
+          label: 'Pause vor Runde 1',
+          unit: 'ms',
+          description: 'Nach der Rollen-Einblendung, bevor die erste Station beginnt.',
+        }),
+      },
+      { label: 'Ausbrüten' },
+    ),
+
     peek: group(
       {
         enabled: bool(true, { label: 'Spick-Station aktiv' }),

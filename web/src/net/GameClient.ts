@@ -5,7 +5,10 @@ import {
   estimateClockOffset,
   parseServerMessage,
   type ClientMessage,
+  type CareKind,
+  type CareMethod,
   type ClockSample,
+  type DeviceCalibration,
   type ErrorCode,
   type GameControl,
   type HostSettings,
@@ -278,6 +281,13 @@ export class GameClient {
   }
   control(action: GameControl) {
     this.act({ type: 'game.control', action });
+  }
+  hatchProgress(kind: CareKind, method: CareMethod) {
+    this.act({ type: 'hatch.progress', kind, method });
+  }
+  /** Technik-Check melden; ohne Verbindung still verwerfen (wird später erneut gesendet). */
+  sendCalibration(calibration: DeviceCalibration) {
+    this.send({ type: 'device.calibration', calibration });
   }
   dismissError() {
     this.set({ lastError: null });

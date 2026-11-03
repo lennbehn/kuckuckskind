@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { CareKindSchema, GameConfigSchema, ModuleIdSchema } from '../config/schema.ts';
 import type { ConfigOverride } from '../config/resolve.ts';
+import { RoleSchema } from '../game/phase.ts';
 
 /** Raumcodes: 4 Konsonanten ohne verwechselbare Zeichen – leicht vorzulesen, keine Wörter. */
 export const ROOM_CODE_ALPHABET = 'BCDFGHJKLMNPQRSTVWXZ';
@@ -15,8 +16,11 @@ export const PlayerNameSchema = z
   .transform((s) => s.trim().replace(/\s+/g, ' '))
   .pipe(z.string().min(1, 'Name fehlt').max(20, 'Name zu lang (höchstens 20 Zeichen)'));
 
-/** Phasen, die der Raum in M2 kennt; M3/M4 ergänzen Ausbrüten, Spick-Wahl, Abstimmung usw. */
-export const RoomPhaseSchema = z.enum(['lobby', 'rounds', 'homecoming']);
+/**
+ * Phasen des Raums. Schlüpfen und Rollen-Einblendung sind der Anfang von `rounds`
+ * (vor `timeline.t0`, gesteuert über `hatch`). M4 ergänzt Spick-Wahl, Abstimmung usw.
+ */
+export const RoomPhaseSchema = z.enum(['lobby', 'hatching', 'rounds', 'homecoming']);
 export type RoomPhase = z.infer<typeof RoomPhaseSchema>;
 
 /**
@@ -52,10 +56,47 @@ export const TimelineSchema = z.object({
   pausedAt: z.number().nullable(),
 });
 
+/** Ergebnis des Technik-Checks eines Geräts (für Hinweise und Live-Debug im Admin). */
+export const SensorStatusSchema = z.enum([
+  'ok',
+  'denied',
+  'unavailable',
+  'insecure',
+  'error',
+  'unused',
+]);
+export type SensorStatus = z.infer<typeof SensorStatusSchema>;
+
+export const DeviceCalibrationSchema = z.object({
+  platform: z.enum(['ios', 'android', 'other']),
+  standalone: z.boolean(),
+  wakeLock: z.boolean(),
+  mic: z.object({
+    status: SensorStatusSchema,
+    noiseDb: z.number().optional(),
+    peakDb: z.number().optional(),
+  }),
+  motion: z.object({
+    status: SensorStatusSchema,
+    scale: z.number().optional(),
+  }),
+  cover: z.object({
+    minTouchPoints: z.number().int().optional(),
+    maxTouches: z.number().int().optional(),
+    method: z.enum(['touches', 'area', 'fallback']).optional(),
+  }),
+});
+export type DeviceCalibration = z.infer<typeof DeviceCalibrationSchema>;
+
+export const CareMethodSchema = z.enum(['sensor', 'fallback']);
+export type CareMethod = z.infer<typeof CareMethodSchema>;
+
 export const PlayerViewSchema = z.object({
   id: z.string(),
   name: z.string(),
   connected: z.boolean(),
+  /** Beim Ausbrüten erledigte Pflegearten (für „Warte auf …“). */
+  hatched: z.array(CareKindSchema),
 });
 export type PlayerView = z.infer<typeof PlayerViewSchema>;
 
@@ -74,9 +115,22 @@ export const RoomViewSchema = z.object({
   /** Module, die auf dem Server gebaut sind und eingeschaltet werden können. */
   availableModules: z.array(ModuleIdSchema),
   timeline: TimelineSchema.nullable(),
-  you: z.object({ playerId: z.string() }),
+  /** Gemeinsames Schlüpfen: Zeitpunkte (Server-Zeit), sobald alle Eier fertig sind. */
+  hatch: z
+    .object({
+      at: z.number(),
+      /** Ende der Rollen-Einblendung. */
+      revealEndsAt: z.number(),
+    })
+    .nullable(),
+  you: z.object({
+    playerId: z.string(),
+    /** Eigene Rolle – nur bis zum Ende der Einblendung, danach nie wieder. */
+    role: RoleSchema.optional(),
+  }),
 });
 export type RoomView = z.infer<typeof RoomViewSchema>;
 
-export const GameControlSchema = z.enum(['pause', 'resume', 'skip', 'abort']);
+/** `hatchNow`: Host lässt alle Küken sofort schlüpfen (wenn ein Gerät hängt). */
+export const GameControlSchema = z.enum(['pause', 'resume', 'skip', 'abort', 'hatchNow']);
 export type GameControl = z.infer<typeof GameControlSchema>;

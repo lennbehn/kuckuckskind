@@ -13,6 +13,14 @@ function newRoom() {
   return new Room('BCDF', clock.now(), deps);
 }
 
+/** Start + alle Eier fertig → Runden laufen (Takt beginnt nach Schlüpfen und Einblendung). */
+function startRounds(room: Room, host: string) {
+  room.start(host);
+  for (const id of room.seating) {
+    for (const kind of room.config.care.activeKinds) room.recordHatch(id, kind, 'sensor');
+  }
+}
+
 function roomWith(n: number) {
   const room = newRoom();
   const ids = Array.from(
@@ -111,11 +119,11 @@ describe('Partie', () => {
 
   it('läuft alle Runden durch und endet in der Heimkehr', () => {
     const { room, host } = roomWith(3);
-    room.start(host);
+    startRounds(room, host);
     expect(room.phase).toBe('rounds');
     const tl = room.timeline!;
     expect(tl.rounds).toBe(3);
-    expect(tl.t0).toBe(clock.now() + room.config.timing.nextLeadMs);
+    expect(tl.t0).toBe(room.hatch!.revealEndsAt + room.config.hatching.settleMs);
     expect(() => room.addPlayer('Spät', 'hx')).toThrow(/läuft schon/);
 
     clock.advance(tl.t0 - clock.now() + 2 * (tl.stationMs + tl.handoverMs) + 1);
@@ -128,8 +136,9 @@ describe('Partie', () => {
 
   it('Pause hält den Takt an, Fortsetzen mit Vorlauf', () => {
     const { room, host } = roomWith(3);
-    room.start(host);
+    startRounds(room, host);
     clock.advance(10_000);
+    clock.advance(room.timeline!.t0 - clock.now());
     room.control(host, 'pause');
     clock.advance(10 * 60_000);
     expect(room.phase).toBe('rounds');
@@ -140,8 +149,8 @@ describe('Partie', () => {
 
   it('Überspringen beendet die Station nach dem Vorlauf', () => {
     const { room, host } = roomWith(3);
-    room.start(host);
-    clock.advance(5000);
+    startRounds(room, host);
+    clock.advance(room.timeline!.t0 - clock.now() + 5000);
     room.control(host, 'skip');
     clock.advance(room.config.timing.nextLeadMs);
     expect(positionAt(room.timeline!, clock.now())).toMatchObject({ stage: 'handover', round: 0 });
@@ -149,7 +158,7 @@ describe('Partie', () => {
 
   it('Abbruch führt zurück in die Lobby und stoppt den Takt', () => {
     const { room, host } = roomWith(3);
-    room.start(host);
+    startRounds(room, host);
     room.control(host, 'abort');
     expect(room.phase).toBe('lobby');
     expect(room.timeline).toBeNull();
@@ -158,7 +167,7 @@ describe('Partie', () => {
 
   it('wer während der Partie geht, behält seinen Platz', () => {
     const { room, ids, host } = roomWith(3);
-    room.start(host);
+    startRounds(room, host);
     room.removePlayer(ids[1] as string, 'left');
     expect(room.seating).toEqual(ids);
     expect(room.players.get(ids[1] as string)?.connected).toBe(false);
@@ -176,8 +185,8 @@ describe('Snapshot', () => {
   it('überlebt Speichern und Wiederherstellen samt Takt', () => {
     const { room, host } = roomWith(4);
     room.updateSettings(host, { stationSeconds: 30 });
-    room.start(host);
-    clock.advance(20_000);
+    startRounds(room, host);
+    clock.advance(room.timeline!.t0 - clock.now() + 20_000);
     const snap = RoomSnapshotSchema.parse(JSON.parse(JSON.stringify(room.snapshot())));
     expect(Object.keys(snap.players[0]!)).toEqual(
       expect.not.arrayContaining(['token', 'connected']),
@@ -195,10 +204,94 @@ describe('Snapshot', () => {
 
   it('Raum, dessen Takt während des Ausfalls ablief, kommt in der Heimkehr an', () => {
     const { room, host } = roomWith(3);
-    room.start(host);
+    startRounds(room, host);
     const snap = room.snapshot();
     room.dispose();
     clock.advance(60 * 60_000);
     expect(Room.restore(snap, deps).phase).toBe('homecoming');
+  });
+});
+
+describe('Ausbrüten', () => {
+  it('Start führt ins Ausbrüten; Schlüpfen erst, wenn alle alle Pflegearten geschafft haben', () => {
+    const { room, ids, host } = roomWith(3);
+    room.start(host);
+    expect(room.phase).toBe('hatching');
+    const kinds = room.config.care.activeKinds;
+    for (const id of ids.slice(0, 2)) for (const k of kinds) room.recordHatch(id, k, 'sensor');
+    const last = ids[2] as string;
+    for (const k of kinds.slice(0, -1)) room.recordHatch(last, k, 'fallback');
+    expect(room.phase).toBe('hatching');
+    expect(room.viewFor(host).players[2]?.hatched).toEqual(kinds.slice(0, -1));
+    room.recordHatch(last, kinds[kinds.length - 1]!, 'sensor');
+    expect(room.phase).toBe('rounds');
+    expect(room.hatch!.at).toBe(clock.now() + room.config.timing.nextLeadMs);
+  });
+
+  it('lehnt inaktive Pflegearten und falsche Phase ab', () => {
+    const { room, host } = roomWith(3);
+    expect(() => room.recordHatch(host, 'blow', 'sensor')).toThrow();
+    room.start(host);
+    expect(() => room.recordHatch(host, 'feed', 'sensor')).toThrow(/nicht aktiv/);
+  });
+
+  it('Host kann alle sofort schlüpfen lassen', () => {
+    const { room, ids, host } = roomWith(3);
+    room.start(host);
+    expect(() => room.control(ids[1] as string, 'hatchNow')).toThrow(/Host/);
+    room.control(host, 'hatchNow');
+    expect(room.phase).toBe('rounds');
+  });
+
+  it('verteilt genau einen Kuckuck', () => {
+    const { room, host } = roomWith(5);
+    startRounds(room, host);
+    const roles = room.seating.map((id) => room.roleOf(id));
+    expect(roles.filter((r) => r === 'cuckoo')).toHaveLength(1);
+    expect(roles.filter((r) => r === 'foster')).toHaveLength(4);
+  });
+
+  it('jeder sieht nur die eigene Rolle – und nur während der Einblendung', () => {
+    const { room, ids, host } = roomWith(4);
+    startRounds(room, host);
+    for (const id of ids) {
+      const view = room.viewFor(id);
+      expect(view.you.role).toBe(room.roleOf(id));
+      const json = JSON.stringify(view);
+      expect(json.match(/"(cuckoo|foster)"/g)).toHaveLength(1);
+    }
+    const before = changes;
+    clock.advance(room.hatch!.revealEndsAt - clock.now());
+    expect(changes).toBeGreaterThan(before);
+    for (const id of ids) expect(JSON.stringify(room.viewFor(id))).not.toMatch(/"(cuckoo|foster)"/);
+  });
+
+  it('Abbruch setzt Ausbrüten und Rollen zurück', () => {
+    const { room, host } = roomWith(3);
+    startRounds(room, host);
+    room.control(host, 'abort');
+    expect(room.roles).toBeNull();
+    expect(room.hatch).toBeNull();
+    expect(room.viewFor(host).players.every((p) => p.hatched.length === 0)).toBe(true);
+  });
+
+  it('Rollen und Fortschritt überleben einen Neustart', () => {
+    const { room, ids, host } = roomWith(3);
+    room.start(host);
+    room.recordHatch(ids[0] as string, 'blow', 'fallback');
+    room.setCalibration(ids[0] as string, {
+      platform: 'ios',
+      standalone: false,
+      wakeLock: true,
+      mic: { status: 'denied' },
+      motion: { status: 'ok', scale: 1.2 },
+      cover: { minTouchPoints: 4, maxTouches: 5, method: 'touches' },
+    });
+    const restored = Room.restore(RoomSnapshotSchema.parse(room.snapshot()), deps);
+    expect(restored.hatched.get(ids[0] as string)?.get('blow')).toBe('fallback');
+    expect(restored.calibrations.get(ids[0] as string)?.mic.status).toBe('denied');
+    restored.control(host, 'hatchNow');
+    const snap = RoomSnapshotSchema.parse(restored.snapshot());
+    expect(Room.restore(snap, deps).roles).toEqual(restored.roles);
   });
 });

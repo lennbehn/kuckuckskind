@@ -218,6 +218,10 @@ export function createApp({
         return room.start(playerId);
       case 'game.control':
         return room.control(playerId, msg.action);
+      case 'hatch.progress':
+        return room.recordHatch(playerId, msg.kind, msg.method);
+      case 'device.calibration':
+        return room.setCalibration(playerId, msg.calibration);
       case 'module.message':
         throw new RoomError('not_allowed', `Modul „${msg.moduleId}“ ist nicht aktiv`);
     }

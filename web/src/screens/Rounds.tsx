@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { holderOf, msLeft, positionAt, type RoomView } from '@kuckuckskind/shared';
 import { useGameClient, useServerNow } from '../net/hooks.ts';
+import { HatchReveal } from './HatchReveal.tsx';
 
 const formatSeconds = (ms: number) => {
   const s = Math.max(0, Math.ceil(ms / 1000));
@@ -36,12 +37,7 @@ export function Rounds({ room }: { room: RoomView }) {
 
   let body;
   if (pos.stage === 'before') {
-    body = (
-      <div className="stage">
-        <p className="lead">Gleich geht’s los …</p>
-        <div className="countdown">{formatSeconds(left)}</div>
-      </div>
-    );
+    body = <HatchReveal room={room} now={now} startsAt={pos.startsAt} />;
   } else if (pos.stage === 'station') {
     const holder = holderOf(owner, pos.round, seating);
     body = (

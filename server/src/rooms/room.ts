@@ -1,5 +1,7 @@
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import {
+  assignRoles,
+  createRng,
   createTimeline,
   hostSettingsToOverride,
   nextBoundary,
@@ -9,11 +11,15 @@ import {
   skipStage,
   totalRounds,
   tryResolveConfig,
+  type CareKind,
+  type CareMethod,
   type ConfigOverride,
+  type DeviceCalibration,
   type GameConfig,
   type GameControl,
   type HostSettings,
   type ModuleId,
+  type Role,
   type RoomPhase,
   type RoomView,
   type Timeline,
@@ -45,11 +51,13 @@ export interface RoomDeps {
 /**
  * Ein Raum = ein Zustandsautomat im Speicher.
  *
- *   lobby ──start──▶ rounds ──(Takt abgelaufen)──▶ homecoming
- *     ▲                 │                              │
- *     └──────abort──────┴──────────────abort───────────┘
+ *   lobby ──start──▶ hatching ──(alle Eier fertig)──▶ rounds ──(Takt abgelaufen)──▶ homecoming
+ *     ▲                  │                               │                            │
+ *     └───────abort──────┴───────────────abort───────────┴────────────abort───────────┘
  *
- * M3/M4 fügen Ausbrüten, Rollen, Spick-Wahl, Abstimmung und Wertung ein.
+ * Beim Schlüpfen werden die Rollen verteilt; `rounds` beginnt mit gemeinsamem Schlüpfen und
+ * der geheimen Rollen-Einblendung (bis `hatch.revealEndsAt`), danach läuft der Takt.
+ * M4 fügt Spick-Wahl, Abstimmung und Wertung ein.
  * Alle Zeiten sind Server-Zeit; Clients rechnen den Takt selbst aus `timeline`.
  */
 export class Room {
@@ -63,8 +71,18 @@ export class Room {
   config: GameConfig;
   timeline: Timeline | null = null;
   finishedAt: number | null = null;
+  /** Je Spieler die beim Ausbrüten geschafften Pflegearten und wie (Sensor/Ersatz). */
+  readonly hatched = new Map<string, Map<CareKind, CareMethod>>();
+  /** Technik-Check je Spieler (für Hinweise und Admin-Debug). */
+  readonly calibrations = new Map<string, DeviceCalibration>();
+  hatch: { at: number; revealEndsAt: number } | null = null;
+  /** Geheim: nur auf dem Server. */
+  roles: Record<string, Role> | null = null;
+  /** Zufalls-Seed der Partie (für reproduzierbare Simulation in M4). */
+  seed: number | null = null;
 
   private cancelTimer: (() => void) | null = null;
+  private cancelRevealTimer: (() => void) | null = null;
   private readonly removalTimers = new Map<string, () => void>();
 
   constructor(
@@ -219,22 +237,90 @@ export class Room {
         `Mindestens ${this.config.room.minPlayers} Spieler nötig.`,
       );
     }
+    this.resetGame();
+    this.phase = 'hatching';
+    this.changed();
+  }
+
+  /** Eine Pflegeart am eigenen Ei geschafft. Sind alle fertig, schlüpfen alle gemeinsam. */
+  recordHatch(playerId: string, kind: CareKind, method: CareMethod) {
+    this.requirePhase('hatching');
+    if (!this.config.care.activeKinds.includes(kind)) {
+      throw new RoomError('bad_message', 'Diese Pflegeart ist nicht aktiv.');
+    }
+    const done = this.hatched.get(playerId) ?? new Map<CareKind, CareMethod>();
+    if (done.get(kind) === method) return;
+    done.set(kind, method);
+    this.hatched.set(playerId, done);
+    if (this.allHatched()) this.hatchAll();
+    else this.changed();
+  }
+
+  setCalibration(playerId: string, calibration: DeviceCalibration) {
+    if (!this.players.has(playerId)) return;
+    this.calibrations.set(playerId, calibration);
+    this.changed();
+  }
+
+  private allHatched() {
+    const kinds = this.config.care.activeKinds;
+    return [...this.players.keys()].every((id) => kinds.every((k) => this.hatched.get(id)?.has(k)));
+  }
+
+  /**
+   * Alle Küken schlüpfen zum selben Zeitpunkt (mit Vorlauf), dann geheime Rollen-Einblendung,
+   * dann kurze Pause und Runde 1.
+   */
+  private hatchAll() {
     const t = this.config.timing;
+    const at = this.deps.now() + t.nextLeadMs;
+    const revealEndsAt = at + this.config.hatching.hatchAnimationMs + t.roleRevealMs;
+    this.seed = randomInt(2 ** 31);
+    this.roles = assignRoles(this.seating, this.config, createRng(this.seed));
+    this.hatch = { at, revealEndsAt };
     this.timeline = createTimeline({
-      startsAt: this.deps.now() + t.nextLeadMs,
+      startsAt: revealEndsAt + this.config.hatching.settleMs,
       stationMs: t.stationSeconds * 1000,
       handoverMs: t.handoverSeconds * 1000,
-      rounds: totalRounds(this.config, n),
+      rounds: totalRounds(this.config, this.seating.length),
     });
     this.phase = 'rounds';
-    this.finishedAt = null;
+    this.armRevealTimer();
     this.armTimer();
     this.changed();
+  }
+
+  /** Nach der Einblendung neu senden – ab dann ohne Rolle. */
+  private armRevealTimer() {
+    this.cancelRevealTimer?.();
+    this.cancelRevealTimer = null;
+    if (!this.hatch || this.deps.now() >= this.hatch.revealEndsAt) return;
+    this.cancelRevealTimer = this.deps.schedule(this.hatch.revealEndsAt, () => {
+      this.cancelRevealTimer = null;
+      this.changed();
+    });
+  }
+
+  private resetGame() {
+    this.cancelTimer?.();
+    this.cancelTimer = null;
+    this.cancelRevealTimer?.();
+    this.cancelRevealTimer = null;
+    this.timeline = null;
+    this.finishedAt = null;
+    this.hatched.clear();
+    this.hatch = null;
+    this.roles = null;
+    this.seed = null;
   }
 
   control(by: string, action: GameControl) {
     this.requireHost(by);
     if (action === 'abort') return this.backToLobby();
+    if (action === 'hatchNow') {
+      this.requirePhase('hatching');
+      return this.hatchAll();
+    }
     this.requirePhase('rounds');
     const tl = this.timeline as Timeline;
     const now = this.deps.now();
@@ -252,11 +338,8 @@ export class Room {
   }
 
   private backToLobby() {
-    this.cancelTimer?.();
-    this.cancelTimer = null;
+    this.resetGame();
     this.phase = 'lobby';
-    this.timeline = null;
-    this.finishedAt = null;
     // Wer während der Partie gegangen ist, verliert jetzt seinen Platz nach der Gnadenfrist.
     for (const p of this.players.values()) if (!p.connected) this.scheduleRemoval(p);
     this.changed();
@@ -280,6 +363,7 @@ export class Room {
 
   dispose() {
     this.cancelTimer?.();
+    this.cancelRevealTimer?.();
     for (const cancel of this.removalTimers.values()) cancel();
     this.removalTimers.clear();
   }
@@ -293,14 +377,32 @@ export class Room {
       hostId: this.hostId,
       players: this.seating.map((id) => {
         const p = this.players.get(id) as Player;
-        return { id: p.id, name: p.name, connected: p.connected };
+        return {
+          id: p.id,
+          name: p.name,
+          connected: p.connected,
+          hatched: [...(this.hatched.get(id)?.keys() ?? [])],
+        };
       }),
       config: this.config,
       settings: this.settings,
       availableModules: [...this.deps.availableModules],
       timeline: this.timeline,
-      you: { playerId },
+      hatch: this.hatch,
+      you: { playerId, ...this.secretsFor(playerId) },
     };
+  }
+
+  /** Geheimes nur für diesen Spieler – die Rolle nur bis zum Ende der Einblendung. */
+  private secretsFor(playerId: string): { role?: Role } {
+    const role = this.roles?.[playerId];
+    if (!role || !this.hatch || this.deps.now() >= this.hatch.revealEndsAt) return {};
+    return { role };
+  }
+
+  /** Rolle eines Spielers (nur serverintern, z. B. Wertung). */
+  roleOf(playerId: string): Role | null {
+    return this.roles?.[playerId] ?? null;
   }
 
   snapshot(): RoomSnapshot {
@@ -316,6 +418,13 @@ export class Room {
       settings: this.settings,
       timeline: this.timeline,
       finishedAt: this.finishedAt,
+      hatched: Object.fromEntries(
+        [...this.hatched].map(([id, kinds]) => [id, Object.fromEntries(kinds)]),
+      ),
+      calibrations: Object.fromEntries(this.calibrations),
+      hatch: this.hatch,
+      roles: this.roles,
+      seed: this.seed,
     };
   }
 
@@ -331,6 +440,14 @@ export class Room {
     room.config = room.resolve(snap.settings);
     room.timeline = snap.timeline;
     room.finishedAt = snap.finishedAt;
+    for (const [id, kinds] of Object.entries(snap.hatched)) {
+      room.hatched.set(id, new Map(Object.entries(kinds) as [CareKind, CareMethod][]));
+    }
+    for (const [id, cal] of Object.entries(snap.calibrations)) room.calibrations.set(id, cal);
+    room.hatch = snap.hatch;
+    room.roles = snap.roles;
+    room.seed = snap.seed;
+    room.armRevealTimer();
     room.armTimer();
     if (room.phase === 'lobby') for (const p of room.players.values()) room.scheduleRemoval(p);
     return room;

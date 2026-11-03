@@ -1,5 +1,8 @@
 import { z } from 'zod';
+import { CareKindSchema } from '../config/schema.ts';
 import {
+  CareMethodSchema,
+  DeviceCalibrationSchema,
   GameControlSchema,
   HostSettingsSchema,
   PlayerNameSchema,
@@ -82,6 +85,19 @@ export const GameControlMessageSchema = z.object({
   action: GameControlSchema,
 });
 
+/** Eine Pflegeart am eigenen Ei geschafft (Riss in der Schale). */
+export const HatchProgressSchema = z.object({
+  type: z.literal('hatch.progress'),
+  kind: CareKindSchema,
+  method: CareMethodSchema,
+});
+
+/** Ergebnis des Technik-Checks dieses Geräts (jederzeit aktualisierbar). */
+export const DeviceCalibrationMessageSchema = z.object({
+  type: z.literal('device.calibration'),
+  calibration: DeviceCalibrationSchema,
+});
+
 export const ClientMessageSchema = z.discriminatedUnion('type', [
   HelloSchema,
   TimePingSchema,
@@ -93,6 +109,8 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   LobbyKickSchema,
   GameStartSchema,
   GameControlMessageSchema,
+  HatchProgressSchema,
+  DeviceCalibrationMessageSchema,
   ModuleClientMessageSchema,
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;

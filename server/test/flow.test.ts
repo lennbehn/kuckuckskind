@@ -140,12 +140,22 @@ describe('Raum über WebSocket', () => {
     expect(await ben.next('error')).toMatchObject({ code: 'not_allowed' });
 
     anna.send({ type: 'game.start' });
+    await cem.room((r) => r.phase === 'hatching');
+    for (const cl of [anna, ben, cem]) {
+      for (const kind of view.config.care.activeKinds) {
+        cl.send({ type: 'hatch.progress', kind, method: 'sensor' });
+      }
+    }
     const [ra, rb, rc] = (await Promise.all(
       [anna, ben, cem].map((cl) => cl.room((r) => r.phase === 'rounds')),
     )) as [RoomView, RoomView, RoomView];
     expect(ra.timeline).toEqual(rb.timeline);
     expect(rb.timeline).toEqual(rc.timeline);
     expect(ra.timeline?.rounds).toBe(3);
+    expect(ra.hatch).toEqual(rc.hatch);
+    // Jeder bekommt genau seine eigene Rolle, einer ist Kuckuck.
+    const roles = [ra, rb, rc].map((r) => r.you.role);
+    expect(roles.filter((r) => r === 'cuckoo')).toHaveLength(1);
   });
 
   it('Wiederverbinden mit Token führt zurück in denselben Raum', async () => {
@@ -187,6 +197,8 @@ describe('Raum über WebSocket', () => {
   it('Räume überleben einen Server-Neustart', async () => {
     const { code, anna, ben } = await roomOf3();
     anna.send({ type: 'game.start' });
+    await ben.room((r) => r.phase === 'hatching');
+    anna.send({ type: 'game.control', action: 'hatchNow' });
     await ben.room((r) => r.phase === 'rounds');
     const token = ben.token;
     await app.close();
