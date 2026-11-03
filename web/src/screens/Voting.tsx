@@ -1,5 +1,6 @@
 import type { RoomView } from '@kuckuckskind/shared';
 import { useGameClient } from '../net/hooks.ts';
+import { MiniChick } from '../art/MiniChick.tsx';
 
 /**
  * Abstimmung: jeder wählt vorläufig und kann ändern. Angezeigt wird nur die Zahl der Stimmen,
@@ -31,7 +32,12 @@ export function Voting({ room }: { room: RoomView }) {
               disabled={id === me}
               onClick={() => client.vote(id === mine ? null : id)}
             >
-              <span>
+              <span className="who">
+                <MiniChick
+                  size={36}
+                  wellbeing={room.chicks?.[id]?.wellbeing}
+                  alive={room.chicks?.[id]?.alive}
+                />
                 {nameOf(id)}
                 {id === me && ' (du)'}
               </span>

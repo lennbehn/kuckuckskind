@@ -7,6 +7,7 @@ import { browserTokenStorage } from './net/session.ts';
 import { DeviceSensors } from './sensors/DeviceSensors.ts';
 import { SensorsContext } from './sensors/hooks.ts';
 import './styles.css';
+import { unlockSound } from './art/sound.ts';
 
 /** WebSocket-Adresse: gleiche Herkunft wie die Seite (CloudFront bzw. Vite-Proxy). */
 const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
@@ -27,6 +28,8 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 window.addEventListener('online', () => client.reconnectNow());
+// iOS spielt Töne erst nach einer Berührung.
+window.addEventListener('pointerdown', unlockSound, { capture: true });
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

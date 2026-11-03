@@ -9,6 +9,7 @@ import {
 } from '@kuckuckskind/shared';
 import { useGameClient } from '../net/hooks.ts';
 import { joinUrl } from '../routing.ts';
+import { EggNest } from '../art/EggNest.tsx';
 
 const CARE_LABELS: Record<CareKind, string> = {
   blow: 'Pusten (Hitze)',
@@ -51,6 +52,7 @@ export function Lobby({ room }: { room: RoomView }) {
   return (
     <main className="paper">
       <h1 className="small">Kuckuckskind</h1>
+      <EggNest count={room.players.length} />
       <RoomCode code={room.code} />
 
       <section className="card">

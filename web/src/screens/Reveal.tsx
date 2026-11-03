@@ -1,5 +1,8 @@
 import type { RoomView } from '@kuckuckskind/shared';
 import { useGameClient, useServerNow } from '../net/hooks.ts';
+import { ChickArt } from '../art/ChickArt.tsx';
+import { MOODS } from '../art/chickParams.ts';
+import { MiniChick } from '../art/MiniChick.tsx';
 
 const WINNER_TEXT = {
   fosters: 'Die Pflegeeltern gewinnen!',
@@ -28,11 +31,19 @@ export function Reveal({ room }: { room: RoomView }) {
       <div className={`flip-card ${flipped ? 'flipped' : ''}`}>
         <div className="flip-inner">
           <div className="flip-front">
-            <div className="egg">🐥</div>
+            <ChickArt params={MOODS.content} back size={170} title="Küken von hinten" />
             <p>Das Küken von {nameOf(reveal.accusedId)} dreht sich um …</p>
           </div>
           <div className="flip-back">
-            <div className="egg">{reveal.accusedRole === 'cuckoo' ? '🐦‍⬛' : '🐥'}</div>
+            <ChickArt
+              params={
+                reveal.accusedRole === 'cuckoo'
+                  ? { ...MOODS.content, cuckoo: 1, browAngle: 0.8, mouth: 0.6, eyeSmile: 0.3 }
+                  : { ...MOODS.worried, tears: 0.4 }
+              }
+              size={170}
+              title={reveal.accusedRole === 'cuckoo' ? 'Kuckucks-Küken' : 'Küken'}
+            />
             <p>
               <strong>{nameOf(reveal.accusedId)}</strong>{' '}
               {reveal.accusedRole === 'cuckoo' ? 'ist der Kuckuck!' : 'ist kein Kuckuck.'}
@@ -70,13 +81,26 @@ export function Reveal({ room }: { room: RoomView }) {
               const c = result.chicks[p.id];
               return (
                 <li key={p.id}>
-                  <span>
+                  <span className="who">
+                    <MiniChick
+                      wellbeing={c?.wellbeing}
+                      alive={c?.alive}
+                      params={
+                        result.roles[p.id] === 'cuckoo'
+                          ? { ...MOODS.content, cuckoo: 1 }
+                          : undefined
+                      }
+                    />
                     {p.name}{' '}
                     {result.roles[p.id] === 'cuckoo' && <span className="tag">Kuckuck</span>}
                   </span>
                   <span>
-                    {!c?.alive ? '🪶' : result.happy.includes(p.id) ? '🐥 glücklich' : '🐤'}{' '}
-                    {c && `${Math.round(c.wellbeing * 100)} %`}
+                    {!c?.alive
+                      ? 'nicht mehr da'
+                      : result.happy.includes(p.id)
+                        ? 'glücklich'
+                        : 'unglücklich'}{' '}
+                    {c && `· ${Math.round(c.wellbeing * 100)} %`}
                   </span>
                 </li>
               );

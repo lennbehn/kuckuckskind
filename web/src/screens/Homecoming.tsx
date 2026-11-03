@@ -7,6 +7,7 @@ import {
 import { useGameClient } from '../net/hooks.ts';
 import { useChickRunner, useRunnerView } from '../game/runnerHost.tsx';
 import { Chick } from './game/Chick.tsx';
+import { MiniChick } from '../art/MiniChick.tsx';
 
 /**
  * Heimkehr: Das Handy ist wieder beim Eigentümer. Sein Küken erzählt vage, wie es ihm ging
@@ -64,13 +65,16 @@ export function Homecoming({ room }: { room: RoomView }) {
             const c = room.chicks?.[p.id];
             return (
               <li key={p.id}>
-                <span>{p.name}</span>
+                <span className="who">
+                  {c && <MiniChick wellbeing={c.wellbeing} alive={c.alive} />}
+                  {p.name}
+                </span>
                 <span>
                   {!c
                     ? '…'
                     : !c.alive
-                      ? '🪶 nicht mehr da'
-                      : `${c.wellbeing >= room.config.scoring.happyMin ? '🐥' : '🐤'} ${Math.round(c.wellbeing * 100)} %`}
+                      ? 'nicht mehr da'
+                      : `${c.wellbeing >= room.config.scoring.happyMin ? 'glücklich' : 'unglücklich'} · ${Math.round(c.wellbeing * 100)} %`}
                 </span>
               </li>
             );

@@ -12,6 +12,9 @@ import { PeekChoice } from './screens/PeekChoice.tsx';
 import { Voting } from './screens/Voting.tsx';
 import { Reveal } from './screens/Reveal.tsx';
 import { ChickRunnerHost } from './game/runnerHost.tsx';
+import { ArtDefs } from './art/ArtDefs.tsx';
+import { SoundToggle } from './screens/SoundToggle.tsx';
+import { Gallery } from './screens/Gallery.tsx';
 
 export function App() {
   const { room, status, closedReason } = useGameState();
@@ -23,7 +26,8 @@ export function App() {
   }, [room, closedReason]);
 
   let screen;
-  if (!room) screen = <Home />;
+  if (window.location.pathname === '/galerie') screen = <Gallery />;
+  else if (!room) screen = <Home />;
   else if (room.phase === 'lobby') screen = <Lobby room={room} />;
   else if (room.phase === 'hatching') screen = <Hatching room={room} />;
   else if (room.phase === 'peekChoice') screen = <PeekChoice room={room} />;
@@ -37,7 +41,9 @@ export function App() {
 
   return (
     <>
+      <ArtDefs />
       <ConnectionBanner status={status} />
+      <SoundToggle />
       {screen}
       <ErrorToast />
     </>

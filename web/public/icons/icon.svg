@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <filter id="wc" x="-15%" y="-15%" width="130%" height="130%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="3" seed="4" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="14" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <filter id="pen"><feTurbulence type="fractalNoise" baseFrequency="0.4" seed="2"/><feDisplacementMap in="SourceGraphic" scale="3"/></filter>
+    <radialGradient id="body" cx="40%" cy="32%" r="75%"><stop offset="0%" stop-color="#fff7d6"/><stop offset="55%" stop-color="#f8df82"/><stop offset="100%" stop-color="#e9c55c"/></radialGradient>
+    <radialGradient id="bg" cx="50%" cy="40%" r="70%"><stop offset="0%" stop-color="#fbf5e6"/><stop offset="100%" stop-color="#efe2c0"/></radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <ellipse cx="256" cy="420" rx="190" ry="44" fill="#8a6b45" opacity="0.5" filter="url(#wc)"/>
+  <g transform="translate(206 150) rotate(-30)"><path d="M0 0 C-20 -20 -20 -66 0 -86 C20 -66 20 -20 0 0 Z" fill="#9bbf6a" filter="url(#wc)"/></g>
+  <g transform="translate(306 150) rotate(30)"><path d="M0 0 C-20 -20 -20 -66 0 -86 C20 -66 20 -20 0 0 Z" fill="#9bbf6a" filter="url(#wc)"/></g>
+  <circle cx="256" cy="270" r="150" fill="url(#body)" filter="url(#wc)"/>
+  <circle cx="256" cy="270" r="150" fill="none" stroke="#4b4033" stroke-width="5" filter="url(#pen)"/>
+  <path d="M246 124 C236 100 250 84 262 96" fill="none" stroke="#4b4033" stroke-width="6" stroke-linecap="round"/>
+  <ellipse cx="190" cy="290" rx="26" ry="15" fill="#f08a86" opacity="0.7" filter="url(#wc)"/>
+  <ellipse cx="322" cy="290" rx="26" ry="15" fill="#f08a86" opacity="0.7" filter="url(#wc)"/>
+  <ellipse cx="212" cy="246" rx="17" ry="21" fill="#4b4033"/>
+  <ellipse cx="300" cy="246" rx="17" ry="21" fill="#4b4033"/>
+  <circle cx="218" cy="238" r="5" fill="#fff"/><circle cx="306" cy="238" r="5" fill="#fff"/>
+  <path d="M232 284 Q256 262 280 284 Q256 302 232 284 Z" fill="#f09a4a" stroke="#4b4033" stroke-width="3"/>
+  <path d="M70 420 C110 380 180 396 256 392 C332 396 402 380 442 420 C420 470 330 488 256 488 C182 488 92 470 70 420 Z" fill="#7f9a52" filter="url(#wc)"/>
+  <g fill="none" stroke="#5a4630" stroke-width="6" stroke-linecap="round" filter="url(#pen)"><path d="M60 430 Q150 380 250 400"/><path d="M452 426 Q360 380 262 398"/></g>
+</svg>

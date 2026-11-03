@@ -6,6 +6,9 @@ import { useChickRunner, useRunnerView } from '../game/runnerHost.tsx';
 import { useCareInput, type ManualCare } from '../game/useCareInput.ts';
 import { Chick, NeedHints } from './game/Chick.tsx';
 import { useStable } from './hatching/useStable.ts';
+import { chime } from '../art/sound.ts';
+import { ChickArt } from '../art/ChickArt.tsx';
+import { MOODS } from '../art/chickParams.ts';
 
 const formatSeconds = (ms: number) => {
   const s = Math.max(0, Math.ceil(ms / 1000));
@@ -38,8 +41,10 @@ export function Rounds({ room }: { room: RoomView }) {
   const lastStage = useRef<string | null>(null);
   useEffect(() => {
     const key = pos ? `${pos.stage}:${'round' in pos ? pos.round : ''}` : null;
-    if (key !== lastStage.current && pos?.stage === 'handover')
+    if (key !== lastStage.current && pos?.stage === 'handover') {
       navigator.vibrate?.([200, 100, 200]);
+      chime();
+    }
     lastStage.current = key;
   }, [pos]);
 
@@ -51,9 +56,7 @@ export function Rounds({ room }: { room: RoomView }) {
   if (pos.stage === 'before') {
     body = (
       <div className="stage">
-        <div className="egg" aria-hidden>
-          🐥
-        </div>
+        <ChickArt params={MOODS.happy} size={180} title="Dein Küken" />
         <p className="lead">Gleich beginnt Runde 1 – mit deinem eigenen Küken.</p>
         <div className="countdown">{formatSeconds(left)}</div>
       </div>
@@ -82,6 +85,25 @@ export function Rounds({ room }: { room: RoomView }) {
     body = (
       <div className="stage next">
         <div className="weiter">Weiter!</div>
+        <svg className="arrow-left" viewBox="0 0 120 50" aria-hidden>
+          <path
+            d="M110 25 Q70 18 20 25"
+            fill="none"
+            stroke="#4b4033"
+            strokeWidth="3"
+            strokeLinecap="round"
+            filter="url(#kk-pencil)"
+          />
+          <path
+            d="M34 12 L16 25 L34 38"
+            fill="none"
+            stroke="#4b4033"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            filter="url(#kk-pencil)"
+          />
+        </svg>
         <p className="lead">
           Gib mich nach links an <strong>{nameOf(next)}</strong>.
         </p>
@@ -168,7 +190,8 @@ function Station({
             config={config}
             hurting={view.hurting}
             liked={liked}
-            size={190}
+            size={230}
+            sound
           />
         )}
       </div>

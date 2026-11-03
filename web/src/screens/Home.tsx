@@ -3,6 +3,8 @@ import { RoomCodeSchema } from '@kuckuckskind/shared';
 import { useGameClient, useGameState } from '../net/hooks.ts';
 import { rememberName, rememberedName } from '../net/session.ts';
 import { roomCodeFromPath, showPath } from '../routing.ts';
+import { ChickArt } from '../art/ChickArt.tsx';
+import { MOODS } from '../art/chickParams.ts';
 
 const CLOSED_TEXT = {
   left: 'Du hast den Raum verlassen.',
@@ -36,6 +38,7 @@ export function Home() {
   return (
     <main className="paper">
       <h1>Kuckuckskind</h1>
+      <ChickArt params={MOODS.happy} size={170} title="Kuckuckskind-Küken im Nest" />
       <p className="lead">Ein Ei für jeden – und einer ist heimlich der Kuckuck.</p>
       {closedReason && <p className="note">{CLOSED_TEXT[closedReason]}</p>}
 
