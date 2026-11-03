@@ -2,11 +2,15 @@ import { readEnv } from './env.ts';
 import { createLogger } from './log.ts';
 import { createApp } from './app.ts';
 import { DynamoRoomStore, MemoryRoomStore } from './rooms/store.ts';
+import { DynamoPresetStore, MemoryPresetStore } from './admin/presets.ts';
 
 const env = readEnv();
 const log = createLogger(env.LOG_LEVEL, { stage: env.STAGE });
 const store = env.ROOMS_TABLE ? new DynamoRoomStore(env.ROOMS_TABLE, log) : new MemoryRoomStore();
-const app = createApp({ env, log, store });
+const presets = env.PRESETS_TABLE
+  ? new DynamoPresetStore(env.PRESETS_TABLE, log)
+  : new MemoryPresetStore();
+const app = createApp({ env, log, store, presets });
 
 try {
   await app.rooms.restore();

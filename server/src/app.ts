@@ -1,4 +1,4 @@
-import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 import {
@@ -7,6 +7,7 @@ import {
   PROTOCOL_VERSION,
   parseClientMessage,
   type ClientMessage,
+  type ConfigOverride,
   type ErrorCode,
   type ServerMessage,
 } from '@kuckuckskind/shared';
@@ -16,11 +17,17 @@ import { RoomError } from './rooms/errors.ts';
 import { RoomManager, hashToken } from './rooms/manager.ts';
 import type { Room } from './rooms/room.ts';
 import { MemoryRoomStore, type RoomStore } from './rooms/store.ts';
+import { createAdminAuth, type AdminAuth } from './admin/auth.ts';
+import { createAdminApi } from './admin/http.ts';
+import { MemoryPresetStore, type PresetStore } from './admin/presets.ts';
 
 export interface AppOptions {
   env: Env;
   log: Logger;
   store?: RoomStore;
+  presets?: PresetStore;
+  /** Admin-Anmeldung; Standard aus der Umgebung (Cognito bzw. lokal Passwort). */
+  auth?: AdminAuth;
   /** Uhr für Tests austauschbar. */
   now?: () => number;
   /** Abstand der WebSocket-Pings gegen tote Verbindungen. */
@@ -52,6 +59,8 @@ export function createApp({
   env,
   log,
   store = new MemoryRoomStore(),
+  presets = new MemoryPresetStore(),
+  auth = createAdminAuth(env, log),
   now = Date.now,
   heartbeatMs = 25_000,
   rateLimitPerSecond = 20,
@@ -73,7 +82,15 @@ export function createApp({
     },
   });
 
+  const adminApi = createAdminApi({ rooms, presets, auth, log });
+
   const http = createServer((req, res) => {
+    void adminApi(req, res).then((handled) => {
+      if (!handled) handleHttp(req, res);
+    });
+  });
+
+  function handleHttp(req: IncomingMessage, res: ServerResponse) {
     if (req.url === '/healthz') {
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       res.end(
@@ -89,7 +106,7 @@ export function createApp({
     }
     res.writeHead(404, { 'content-type': 'text/plain' });
     res.end('Not found');
-  });
+  }
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
 
@@ -230,8 +247,38 @@ export function createApp({
         return room.recordStation(playerId, msg.stats);
       case 'vote.cast':
         return room.castVote(playerId, msg.targetId);
+      case 'device.levels':
+        return room.setLevels(playerId, msg.levels);
+      case 'lobby.preset':
+        return void choosePreset(conn, room, playerId, msg.presetId);
       case 'module.message':
         throw new RoomError('not_allowed', `Modul „${msg.moduleId}“ ist nicht aktiv`);
+    }
+  }
+
+  /** Host wählt in der Lobby ein Preset (neueste Version) oder die Standardwerte. */
+  async function choosePreset(
+    conn: Connection,
+    room: Room,
+    playerId: string,
+    presetId: string | null,
+  ) {
+    try {
+      if (room.hostId !== playerId) throw new RoomError('not_allowed', 'Nur der Host darf das.');
+      if (presetId === null) return room.applyPreset({}, null);
+      const preset = await presets.get(presetId);
+      if (!preset) throw new RoomError('bad_message', 'Preset nicht gefunden.');
+      room.applyPreset(preset.override as ConfigOverride, {
+        presetId: preset.presetId,
+        name: preset.name,
+        version: preset.version,
+      });
+    } catch (err) {
+      if (err instanceof RoomError) sendError(conn, err.code, err.message);
+      else {
+        log.error('preset laden fehlgeschlagen', { err: String(err) });
+        sendError(conn, 'internal', 'Preset konnte nicht geladen werden.');
+      }
     }
   }
 

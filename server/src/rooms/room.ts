@@ -20,6 +20,11 @@ import {
   tryResolveConfig,
   type CareKind,
   type CareMethod,
+  type DeviceLevels,
+  type LogEntry,
+  type RoomDebug,
+  type RoomPresetRef,
+  type RoomSummary,
   type ChickOutcome,
   type ChickReport,
   type ConfigOverride,
@@ -57,6 +62,30 @@ export interface RoomDeps {
   /** Module, die gebaut sind und eingeschaltet werden dürfen. */
   availableModules: readonly ModuleId[];
 }
+
+const CARE_DE: Record<CareKind, string> = {
+  blow: 'Pusten',
+  rock: 'Wiegen',
+  cover: 'Zudecken',
+  feed: 'Füttern',
+  sing: 'Vorsingen',
+};
+
+const PHASE_DE: Record<RoomPhase, string> = {
+  lobby: 'Lobby',
+  hatching: 'Ausbrüten',
+  peekChoice: 'Spick-Wahl',
+  rounds: 'Runden',
+  homecoming: 'Heimkehr',
+  voting: 'Abstimmung',
+  reveal: 'Enthüllung',
+};
+
+const REMOVE_TEXT = {
+  left: 'hat den Raum verlassen',
+  kicked: 'wurde entfernt',
+  expired: 'war zu lange weg',
+};
 
 /** Phasen, in denen eine Partie läuft (Küken existieren). */
 const MATCH_PHASES: readonly RoomPhase[] = [
@@ -99,6 +128,14 @@ export class Room {
   readonly calibrations = new Map<string, DeviceCalibration>();
   /** Laufende Partie ab dem Schlüpfen; null in Lobby und beim Ausbrüten. */
   match: MatchState | null = null;
+  /** Herkunft der Konfiguration (Preset oder eigene Werte des Admins). */
+  presetRef: RoomPresetRef | null = null;
+  /** Live-Debug: Messwerte je Gerät und Ereignislog (nur für den Admin-Bereich). */
+  readonly levels = new Map<string, DeviceLevels>();
+  readonly events: LogEntry[] = [];
+  /** Ein Admin schaut zu bis … (dann senden die Handys Messwerte). */
+  debugUntil: number | null = null;
+  private loggedPhase: RoomPhase = 'lobby';
 
   private cancelTimer: (() => void) | null = null;
   private cancelRevealTimer: (() => void) | null = null;
@@ -155,6 +192,7 @@ export class Room {
     };
     this.players.set(player.id, player);
     this.seating.push(player.id);
+    this.log('join', `${name} ist beigetreten`, player.id);
     if (!this.hostId) this.hostId = player.id;
     this.changed();
     return player;
@@ -173,6 +211,7 @@ export class Room {
     } else {
       player.connected = false;
     }
+    this.log('leave', `${player.name} ${REMOVE_TEXT[reason]}`, playerId);
     this.deps.onPlayerRemoved(this, player, reason);
     this.changed();
   }
@@ -182,6 +221,11 @@ export class Room {
     if (!player || player.connected === connected) return;
     player.connected = connected;
     player.lastSeenAt = this.deps.now();
+    this.log(
+      connected ? 'online' : 'offline',
+      `${player.name} ${connected ? 'wieder verbunden' : 'getrennt'}`,
+      playerId,
+    );
     this.removalTimers.get(playerId)?.();
     this.removalTimers.delete(playerId);
     if (!connected && this.phase === 'lobby') this.scheduleRemoval(player);
@@ -244,8 +288,8 @@ export class Room {
     this.removePlayer(playerId, 'kicked');
   }
 
-  /** Neues Preset (Admin) – nur in der Lobby. */
-  applyPreset(override: ConfigOverride) {
+  /** Preset oder eigene Werte (Admin/Host) – nur in der Lobby. */
+  applyPreset(override: ConfigOverride, ref: RoomPresetRef | null = null) {
     this.requirePhase('lobby');
     const prev = this.presetOverride;
     this.presetOverride = override;
@@ -255,7 +299,85 @@ export class Room {
       this.presetOverride = prev;
       throw err;
     }
+    this.presetRef = ref;
+    this.log(
+      'config',
+      ref
+        ? `Konfiguration: ${ref.name}${ref.version ? ` v${ref.version}` : ''}`
+        : 'Konfiguration: Standardwerte',
+    );
     this.changed();
+  }
+
+  // --- Live-Debug ----------------------------------------------------------
+
+  /** Eintrag ins Ereignislog (ohne Geheimes – das steht getrennt in der Debug-Ansicht). */
+  log(type: string, text: string, playerId?: string) {
+    this.events.push({ at: this.deps.now(), type, text, ...(playerId ? { playerId } : {}) });
+    if (this.events.length > 300) this.events.splice(0, this.events.length - 300);
+  }
+
+  setLevels(playerId: string, levels: DeviceLevels) {
+    if (this.players.has(playerId)) this.levels.set(playerId, levels);
+  }
+
+  /** Ein Admin schaut zu: Handys bitten, Messwerte zu senden (verlängert sich beim Abruf). */
+  watch() {
+    const now = this.deps.now();
+    if (this.debugUntil !== null && this.debugUntil - now > 5000) return;
+    this.debugUntil = now + 10_000;
+    this.changed();
+  }
+
+  summary(): RoomSummary {
+    return {
+      code: this.code,
+      phase: this.phase,
+      players: this.players.size,
+      connected: this.connectedCount,
+      createdAt: this.createdAt,
+      preset: this.presetRef,
+    };
+  }
+
+  /** Alles für den Admin – einschließlich Geheimem (Rollen, Spick-Wahl, Stimmen). */
+  debugView(): RoomDebug {
+    const m = this.match;
+    return {
+      serverTime: this.deps.now(),
+      code: this.code,
+      phase: this.phase,
+      hostId: this.hostId,
+      preset: this.presetRef,
+      config: this.config,
+      timeline: m?.timeline ?? null,
+      players: this.seating.map((id) => {
+        const p = this.players.get(id) as Player;
+        return {
+          id,
+          name: p.name,
+          connected: p.connected,
+          lastSeenAt: p.lastSeenAt,
+          hatched: [...(this.hatched.get(id)?.keys() ?? [])],
+          role: m?.roles[id] ?? null,
+          peekChoice: m?.peekChoices[id] ?? null,
+          vote: m?.votes[id] ?? null,
+          calibration: this.calibrations.get(id) ?? null,
+          levels: this.levels.get(id) ?? null,
+          chick: m?.reports[id] ?? null,
+          stations: Object.values(m?.stations[id] ?? {})
+            .sort((a, b) => a.round - b.round)
+            .map((st) => ({
+              round: st.round,
+              loss: st.loss,
+              wellbeingEnd: st.wellbeingEnd,
+              died: st.died,
+            })),
+        };
+      }),
+      result: m?.result ?? null,
+      log: [...this.events],
+    };
   }
 
   // --- Ausbrüten -------------------------------------------------------------
@@ -283,6 +405,14 @@ export class Room {
     }
     const done = this.hatched.get(playerId) ?? new Map<CareKind, CareMethod>();
     if (done.get(kind) === method) return;
+    if (!done.has(kind)) {
+      const name = this.players.get(playerId)?.name ?? playerId;
+      this.log(
+        'hatch',
+        `${name}: ${CARE_DE[kind]} geschafft (${method === 'sensor' ? 'Sensor' : 'Ersatz'})`,
+        playerId,
+      );
+    }
     done.set(kind, method);
     this.hatched.set(playerId, done);
     if (this.allHatched()) this.hatchAll();
@@ -371,6 +501,11 @@ export class Room {
       throw new RoomError('bad_message', 'Diesen Mitspieler kannst du nicht wählen.');
     }
     m.peekChoices[ownerId] = targetId;
+    this.log(
+      'peek',
+      `${this.players.get(ownerId)?.name ?? ownerId} hat die Spick-Station gewählt`,
+      ownerId,
+    );
     if (this.seating.every((id) => m.peekChoices[id] || this.peekOptionsFor(id).length === 0)) {
       this.finishPeek();
     } else {
@@ -460,6 +595,13 @@ export class Room {
     const peek = target ? peekRound(ownerId, target, this.seating, this.roundsTotal()) : null;
     const kept = stats.round === peek ? stats : { ...stats, samples: [] };
     const byRound = (m.stations[ownerId] ??= {});
+    if (!byRound[String(stats.round)]) {
+      this.log(
+        'station',
+        `Küken von ${this.players.get(ownerId)?.name ?? ownerId}, Runde ${stats.round + 1}: Verlust ${Math.round(stats.loss * 100)} %, Befinden ${Math.round(stats.wellbeingEnd * 100)} %${stats.died ? ', gestorben' : ''}`,
+        ownerId,
+      );
+    }
     byRound[String(stats.round)] = kept;
     this.changed();
   }
@@ -520,6 +662,7 @@ export class Room {
       }
       if (targetId === voterId) throw new RoomError('not_allowed', 'Nicht für dich selbst.');
       m.votes[voterId] = targetId;
+      this.log('vote', `${this.players.get(voterId)?.name ?? voterId} hat abgestimmt`, voterId);
     }
     this.changed();
   }
@@ -530,6 +673,7 @@ export class Room {
     const voting = m.voting as NonNullable<MatchState['voting']>;
     const outcome = decideVote(tallyVotes(m.votes, voting.candidates), voting.runoff, this.config);
     if (outcome.kind === 'runoff') {
+      this.log('vote', `Gleichstand – Stichwahl ${voting.runoff + 1}`);
       m.votes = {};
       m.voting = { candidates: outcome.candidates, runoff: voting.runoff + 1 };
       this.changed();
@@ -565,6 +709,7 @@ export class Room {
 
   control(by: string, action: GameControl) {
     this.requireHost(by);
+    this.log('control', `Host: ${action}`, by);
     switch (action) {
       case 'abort':
         return this.backToLobby();
@@ -662,6 +807,9 @@ export class Room {
           : null,
       reveal: phase === 'reveal' ? (m?.reveal ?? null) : null,
       result: phase === 'reveal' ? (m?.result ?? null) : null,
+      preset: this.presetRef,
+      debugUntil:
+        this.debugUntil !== null && this.debugUntil > this.deps.now() ? this.debugUntil : null,
       you: { playerId, ...this.secretsFor(playerId) },
     };
   }
@@ -715,6 +863,7 @@ export class Room {
       ),
       calibrations: Object.fromEntries(this.calibrations),
       match: this.match ? structuredClone(this.match) : null,
+      presetRef: this.presetRef,
     };
   }
 
@@ -733,6 +882,9 @@ export class Room {
     }
     for (const [id, cal] of Object.entries(snap.calibrations)) room.calibrations.set(id, cal);
     room.match = snap.match ? structuredClone(snap.match) : null;
+    room.presetRef = snap.presetRef;
+    room.loggedPhase = snap.phase;
+    room.log('restore', 'Raum nach Neustart wiederhergestellt');
     room.armRevealTimer();
     room.armPhaseTimer();
     room.armTimer();
@@ -763,6 +915,10 @@ export class Room {
   }
 
   private changed() {
+    if (this.phase !== this.loggedPhase) {
+      this.log('phase', `Phase: ${PHASE_DE[this.loggedPhase]} → ${PHASE_DE[this.phase]}`);
+      this.loggedPhase = this.phase;
+    }
     this.deps.onChange(this);
   }
 }

@@ -16,3 +16,4 @@ export * from './game/voting.ts';
 export * from './game/scoring.ts';
 export * from './sim/bots.ts';
 export * from './sim/game.ts';
+export * from './admin/api.ts';

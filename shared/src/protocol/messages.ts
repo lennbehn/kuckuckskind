@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { CareKindSchema } from '../config/schema.ts';
 import { StationStatsSchema } from '../chick/simulation.ts';
+import { DeviceLevelsSchema } from '../admin/api.ts';
 import {
   CareMethodSchema,
   ChickReportSchema,
@@ -121,6 +122,18 @@ export const VoteCastSchema = z.object({
   targetId: z.string().nullable(),
 });
 
+/** Nur Host, nur Lobby: Preset wählen (null = Standardwerte). */
+export const LobbyPresetSchema = z.object({
+  type: z.literal('lobby.preset'),
+  presetId: z.string().max(64).nullable(),
+});
+
+/** Laufende Messwerte fürs Live-Debug – nur solange `debugUntil` in der Zukunft liegt. */
+export const DeviceLevelsMessageSchema = z.object({
+  type: z.literal('device.levels'),
+  levels: z.lazy(() => DeviceLevelsSchema),
+});
+
 export const ClientMessageSchema = z.discriminatedUnion('type', [
   HelloSchema,
   TimePingSchema,
@@ -138,6 +151,8 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   ChickReportMessageSchema,
   ChickStationSchema,
   VoteCastSchema,
+  LobbyPresetSchema,
+  DeviceLevelsMessageSchema,
   ModuleClientMessageSchema,
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;

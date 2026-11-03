@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+// Fehlermeldungen auf Deutsch (Admin-Formular, Lobby-Einstellungen).
+z.config(z.locales.de());
+
 /**
  * Zentrale, typisierte Spielkonfiguration.
  *

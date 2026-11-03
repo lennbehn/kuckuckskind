@@ -12,6 +12,7 @@ import { PeekChoice } from './screens/PeekChoice.tsx';
 import { Voting } from './screens/Voting.tsx';
 import { Reveal } from './screens/Reveal.tsx';
 import { ChickRunnerHost } from './game/runnerHost.tsx';
+import { LevelsReporter } from './game/LevelsReporter.tsx';
 import { ArtDefs } from './art/ArtDefs.tsx';
 import { SoundToggle } from './screens/SoundToggle.tsx';
 import { Gallery } from './screens/Gallery.tsx';
@@ -37,7 +38,23 @@ export function App() {
   else screen = <Reveal room={room} />;
 
   // Das eigene Küken lebt weiter, egal welcher Bildschirm gerade zu sehen ist.
-  if (room && room.timeline) screen = <ChickRunnerHost room={room}>{screen}</ChickRunnerHost>;
+  // Live-Debug: Messwerte senden, solange ein Admin zuschaut.
+  const reporter = room?.debugUntil ? <LevelsReporter room={room} /> : null;
+  if (room && room.timeline) {
+    screen = (
+      <ChickRunnerHost room={room}>
+        {screen}
+        {reporter}
+      </ChickRunnerHost>
+    );
+  } else if (reporter) {
+    screen = (
+      <>
+        {screen}
+        {reporter}
+      </>
+    );
+  }
 
   return (
     <>

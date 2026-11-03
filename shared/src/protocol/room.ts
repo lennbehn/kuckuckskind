@@ -138,6 +138,16 @@ export const RoomViewSchema = z.object({
       revealEndsAt: z.number(),
     })
     .nullable(),
+  /** Herkunft der Konfiguration (Preset-Name und Version). */
+  preset: z
+    .object({
+      presetId: z.string().nullable(),
+      name: z.string(),
+      version: z.number().int().nullable(),
+    })
+    .nullable(),
+  /** Ein Admin schaut zu: bis zu diesem Server-Zeitpunkt Messwerte senden (device.levels). */
+  debugUntil: z.number().nullable(),
   /** Spick-Wahl läuft: Frist und wie viele schon gewählt haben (nicht wer wen). */
   peek: z.object({ deadline: z.number(), chosenCount: z.number().int() }).nullable(),
   /** Zustand aller Küken – ab der Heimkehr öffentlich. */

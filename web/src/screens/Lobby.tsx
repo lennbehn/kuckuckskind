@@ -10,6 +10,7 @@ import {
 import { useGameClient } from '../net/hooks.ts';
 import { joinUrl } from '../routing.ts';
 import { EggNest } from '../art/EggNest.tsx';
+import { PresetPicker } from './PresetPicker.tsx';
 
 const CARE_LABELS: Record<CareKind, string> = {
   blow: 'Pusten (Hitze)',
@@ -163,6 +164,7 @@ function HostSettingsCard({ room }: { room: RoomView }) {
   return (
     <section className="card stack">
       <h2>Einstellungen</h2>
+      <PresetPicker room={room} />
       <label className="field">
         <span>Zeit pro Station</span>
         <select
@@ -243,6 +245,12 @@ function SettingsSummary({ room }: { room: RoomView }) {
   return (
     <section className="card">
       <h2>Einstellungen</h2>
+      {room.preset && (
+        <p className="hint">
+          Werte: {room.preset.name}
+          {room.preset.version ? ` (v${room.preset.version})` : ''}
+        </p>
+      )}
       <p>
         {config.timing.stationSeconds} s pro Station · {config.room.rounds ?? room.players.length}{' '}
         Runden

@@ -69,5 +69,13 @@ export const RoomSnapshotSchema = z.object({
   hatched: z.record(z.string(), z.partialRecord(CareKindSchema, CareMethodSchema)),
   calibrations: z.record(z.string(), DeviceCalibrationSchema),
   match: MatchStateSchema.nullable(),
+  presetRef: z
+    .object({
+      presetId: z.string().nullable(),
+      name: z.string(),
+      version: z.number().int().nullable(),
+    })
+    .nullable()
+    .default(null),
 });
 export type RoomSnapshot = z.infer<typeof RoomSnapshotSchema>;

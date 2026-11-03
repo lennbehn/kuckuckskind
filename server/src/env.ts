@@ -19,6 +19,8 @@ const EnvSchema = z.object({
   COGNITO_USER_POOL_ID: z.string().optional(),
   COGNITO_CLIENT_ID: z.string().optional(),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  /** Nur lokal ohne Cognito: Passwort für den Admin-Bereich. */
+  ADMIN_DEV_PASSWORD: z.string().min(4).default('kuckuck'),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

@@ -7,6 +7,7 @@ import {
   type ClientMessage,
   type CareKind,
   type CareMethod,
+  type DeviceLevels,
   type ChickReport,
   type ClockSample,
   type DeviceCalibration,
@@ -304,6 +305,14 @@ export class GameClient {
   /** Stationsstatistik; fehlt die Verbindung, sendet der Runner später erneut. */
   sendStation(stats: StationStats) {
     this.send({ type: 'chick.station', stats });
+  }
+  /** Host: Preset für den Raum wählen (null = Standardwerte). */
+  selectPreset(presetId: string | null) {
+    this.act({ type: 'lobby.preset', presetId });
+  }
+  /** Messwerte fürs Live-Debug; ohne Verbindung still verwerfen. */
+  sendLevels(levels: DeviceLevels) {
+    this.send({ type: 'device.levels', levels });
   }
   dismissError() {
     this.set({ lastError: null });
