@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { CareKindSchema } from '../config/schema.ts';
+import { StationStatsSchema } from '../chick/simulation.ts';
 import {
   CareMethodSchema,
+  ChickReportSchema,
   DeviceCalibrationSchema,
   GameControlSchema,
   HostSettingsSchema,
@@ -24,8 +26,8 @@ import {
  */
 export const PROTOCOL_VERSION = 1;
 
-/** Größte erlaubte Nachricht in Bytes. */
-export const MAX_MESSAGE_BYTES = 16 * 1024;
+/** Größte erlaubte Nachricht in Bytes (Stationsstatistik mit Aufzeichnung passt hinein). */
+export const MAX_MESSAGE_BYTES = 64 * 1024;
 
 const ms = z.number().finite().nonnegative();
 
@@ -98,6 +100,27 @@ export const DeviceCalibrationMessageSchema = z.object({
   calibration: DeviceCalibrationSchema,
 });
 
+/** Geheime Spick-Wahl: bei wem soll mein Küken genau hinschauen? */
+export const PeekChooseSchema = z.object({ type: z.literal('peek.choose'), targetId: z.string() });
+
+/** Laufender Stand des eigenen Kükens (etwa alle 500 ms). */
+export const ChickReportMessageSchema = z.object({
+  type: z.literal('chick.report'),
+  report: ChickReportSchema,
+});
+
+/** Abschluss einer Station mit Statistik und Aufzeichnung. */
+export const ChickStationSchema = z.object({
+  type: z.literal('chick.station'),
+  stats: StationStatsSchema,
+});
+
+/** Stimme abgeben oder ändern; null = zurückziehen. */
+export const VoteCastSchema = z.object({
+  type: z.literal('vote.cast'),
+  targetId: z.string().nullable(),
+});
+
 export const ClientMessageSchema = z.discriminatedUnion('type', [
   HelloSchema,
   TimePingSchema,
@@ -111,6 +134,10 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   GameControlMessageSchema,
   HatchProgressSchema,
   DeviceCalibrationMessageSchema,
+  PeekChooseSchema,
+  ChickReportMessageSchema,
+  ChickStationSchema,
+  VoteCastSchema,
   ModuleClientMessageSchema,
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;

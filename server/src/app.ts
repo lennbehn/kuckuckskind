@@ -222,6 +222,14 @@ export function createApp({
         return room.recordHatch(playerId, msg.kind, msg.method);
       case 'device.calibration':
         return room.setCalibration(playerId, msg.calibration);
+      case 'peek.choose':
+        return room.choosePeek(playerId, msg.targetId);
+      case 'chick.report':
+        return room.reportChick(playerId, msg.report);
+      case 'chick.station':
+        return room.recordStation(playerId, msg.stats);
+      case 'vote.cast':
+        return room.castVote(playerId, msg.targetId);
       case 'module.message':
         throw new RoomError('not_allowed', `Modul „${msg.moduleId}“ ist nicht aktiv`);
     }

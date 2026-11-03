@@ -3,16 +3,25 @@ import {
   assignRoles,
   createRng,
   createTimeline,
+  decideVote,
+  generateHints,
   hostSettingsToOverride,
   nextBoundary,
   pauseTimeline,
+  peekOptions,
+  peekRound,
   positionAt,
   resumeTimeline,
+  rollCharacter,
+  scoreGame,
   skipStage,
+  tallyVotes,
   totalRounds,
   tryResolveConfig,
   type CareKind,
   type CareMethod,
+  type ChickOutcome,
+  type ChickReport,
   type ConfigOverride,
   type DeviceCalibration,
   type GameConfig,
@@ -22,10 +31,11 @@ import {
   type Role,
   type RoomPhase,
   type RoomView,
+  type StationStats,
   type Timeline,
 } from '@kuckuckskind/shared';
 import { RoomError } from './errors.ts';
-import { SNAPSHOT_VERSION, type RoomSnapshot } from './snapshot.ts';
+import { SNAPSHOT_VERSION, type MatchState, type RoomSnapshot } from './snapshot.ts';
 
 export interface Player {
   id: string;
@@ -48,17 +58,31 @@ export interface RoomDeps {
   availableModules: readonly ModuleId[];
 }
 
+/** Phasen, in denen eine Partie läuft (Küken existieren). */
+const MATCH_PHASES: readonly RoomPhase[] = [
+  'peekChoice',
+  'rounds',
+  'homecoming',
+  'voting',
+  'reveal',
+];
+/** Phasen, in denen der Zustand der Küken öffentlich ist. */
+const PUBLIC_CHICK_PHASES: readonly RoomPhase[] = ['homecoming', 'voting', 'reveal'];
+
 /**
  * Ein Raum = ein Zustandsautomat im Speicher.
  *
- *   lobby ──start──▶ hatching ──(alle Eier fertig)──▶ rounds ──(Takt abgelaufen)──▶ homecoming
- *     ▲                  │                               │                            │
- *     └───────abort──────┴───────────────abort───────────┴────────────abort───────────┘
+ *   lobby ─start─▶ hatching ─(alle Eier)─▶ peekChoice ─(alle gewählt/Frist)─▶ rounds
+ *     ▲                                                                         │ Takt zu Ende
+ *     │                                                                         ▼
+ *     └──────────────abort (jederzeit, Host)──────── reveal ◀─closeVoting─ voting ◀─ homecoming
  *
- * Beim Schlüpfen werden die Rollen verteilt; `rounds` beginnt mit gemeinsamem Schlüpfen und
- * der geheimen Rollen-Einblendung (bis `hatch.revealEndsAt`), danach läuft der Takt.
- * M4 fügt Spick-Wahl, Abstimmung und Wertung ein.
- * Alle Zeiten sind Server-Zeit; Clients rechnen den Takt selbst aus `timeline`.
+ * - peekChoice beginnt mit gemeinsamem Schlüpfen und geheimer Rollen-Einblendung
+ *   (bis hatch.revealEndsAt), danach wählt jeder geheim seine Spick-Station.
+ * - Während der Runden rechnet jedes Handy sein Küken selbst und meldet Stand und
+ *   Stationsstatistik; der Server sammelt, erzeugt daraus Hinweise und wertet.
+ * - Geheimes (Rollen, Spick-Wahl, Stimmen) steckt in `match` und geht nur gefiltert über
+ *   `viewFor` an genau den Spieler, der es sehen darf.
  */
 export class Room {
   phase: RoomPhase = 'lobby';
@@ -69,20 +93,16 @@ export class Room {
   /** Preset aus dem Admin-Bereich (M6). */
   presetOverride: ConfigOverride = {};
   config: GameConfig;
-  timeline: Timeline | null = null;
-  finishedAt: number | null = null;
   /** Je Spieler die beim Ausbrüten geschafften Pflegearten und wie (Sensor/Ersatz). */
   readonly hatched = new Map<string, Map<CareKind, CareMethod>>();
   /** Technik-Check je Spieler (für Hinweise und Admin-Debug). */
   readonly calibrations = new Map<string, DeviceCalibration>();
-  hatch: { at: number; revealEndsAt: number } | null = null;
-  /** Geheim: nur auf dem Server. */
-  roles: Record<string, Role> | null = null;
-  /** Zufalls-Seed der Partie (für reproduzierbare Simulation in M4). */
-  seed: number | null = null;
+  /** Laufende Partie ab dem Schlüpfen; null in Lobby und beim Ausbrüten. */
+  match: MatchState | null = null;
 
   private cancelTimer: (() => void) | null = null;
   private cancelRevealTimer: (() => void) | null = null;
+  private cancelPhaseTimer: (() => void) | null = null;
   private readonly removalTimers = new Map<string, () => void>();
 
   constructor(
@@ -92,6 +112,19 @@ export class Room {
   ) {
     this.hostId = '';
     this.config = this.resolve(this.settings);
+  }
+
+  get timeline(): Timeline | null {
+    return this.match?.timeline ?? null;
+  }
+  get hatch() {
+    return this.match?.hatch ?? null;
+  }
+  get roles(): Record<string, Role> | null {
+    return this.match?.roles ?? null;
+  }
+  get finishedAt(): number | null {
+    return this.match?.finishedAt ?? null;
   }
 
   // --- Spieler -------------------------------------------------------------
@@ -225,7 +258,7 @@ export class Room {
     this.changed();
   }
 
-  // --- Partie ----------------------------------------------------------------
+  // --- Ausbrüten -------------------------------------------------------------
 
   start(by: string) {
     this.requireHost(by);
@@ -269,24 +302,41 @@ export class Room {
 
   /**
    * Alle Küken schlüpfen zum selben Zeitpunkt (mit Vorlauf), dann geheime Rollen-Einblendung,
-   * dann kurze Pause und Runde 1.
+   * dann Spick-Wahl. Rollen, Charaktere und Küken-Seeds entstehen hier – nur auf dem Server.
    */
   private hatchAll() {
     const t = this.config.timing;
-    const at = this.deps.now() + t.nextLeadMs;
+    const now = this.deps.now();
+    const at = now + t.nextLeadMs;
     const revealEndsAt = at + this.config.hatching.hatchAnimationMs + t.roleRevealMs;
-    this.seed = randomInt(2 ** 31);
-    this.roles = assignRoles(this.seating, this.config, createRng(this.seed));
-    this.hatch = { at, revealEndsAt };
-    this.timeline = createTimeline({
-      startsAt: revealEndsAt + this.config.hatching.settleMs,
-      stationMs: t.stationSeconds * 1000,
-      handoverMs: t.handoverSeconds * 1000,
-      rounds: totalRounds(this.config, this.seating.length),
-    });
-    this.phase = 'rounds';
+    const seed = randomInt(2 ** 31);
+    const rng = createRng(seed);
+    const roles = assignRoles(this.seating, this.config, rng);
+    const characters = Object.fromEntries(
+      this.seating.map((id) => [id, rollCharacter(this.config, rng)]),
+    );
+    const chickSeeds = Object.fromEntries(this.seating.map((id) => [id, rng.int(0, 2 ** 31 - 1)]));
+    const peekDeadline = revealEndsAt + (this.config.peek.enabled ? t.peekChoiceSeconds * 1000 : 0);
+    this.match = {
+      seed,
+      hatch: { at, revealEndsAt },
+      roles,
+      characters,
+      chickSeeds,
+      peekDeadline,
+      peekChoices: {},
+      timeline: null,
+      finishedAt: null,
+      reports: {},
+      stations: {},
+      votes: {},
+      voting: null,
+      reveal: null,
+      result: null,
+    };
+    this.phase = 'peekChoice';
     this.armRevealTimer();
-    this.armTimer();
+    this.armPhaseTimer();
     this.changed();
   }
 
@@ -294,35 +344,244 @@ export class Room {
   private armRevealTimer() {
     this.cancelRevealTimer?.();
     this.cancelRevealTimer = null;
-    if (!this.hatch || this.deps.now() >= this.hatch.revealEndsAt) return;
-    this.cancelRevealTimer = this.deps.schedule(this.hatch.revealEndsAt, () => {
+    const hatch = this.hatch;
+    if (!hatch || this.deps.now() >= hatch.revealEndsAt) return;
+    this.cancelRevealTimer = this.deps.schedule(hatch.revealEndsAt, () => {
       this.cancelRevealTimer = null;
       this.changed();
     });
   }
 
-  private resetGame() {
+  // --- Spick-Wahl --------------------------------------------------------------
+
+  private roundsTotal() {
+    return totalRounds(this.config, this.seating.length);
+  }
+
+  peekOptionsFor(ownerId: string): string[] {
+    return peekOptions(ownerId, this.seating, this.roundsTotal(), this.config.peek.allowSelf);
+  }
+
+  choosePeek(ownerId: string, targetId: string) {
+    this.requirePhase('peekChoice');
+    const m = this.match as MatchState;
+    if (!this.config.peek.enabled) throw new RoomError('not_allowed', 'Spick-Station ist aus.');
+    if (this.deps.now() < m.hatch.revealEndsAt) throw new RoomError('not_allowed', 'Noch nicht.');
+    if (!this.peekOptionsFor(ownerId).includes(targetId)) {
+      throw new RoomError('bad_message', 'Diesen Mitspieler kannst du nicht wählen.');
+    }
+    m.peekChoices[ownerId] = targetId;
+    if (this.seating.every((id) => m.peekChoices[id] || this.peekOptionsFor(id).length === 0)) {
+      this.finishPeek();
+    } else {
+      this.changed();
+    }
+  }
+
+  /** Spick-Wahl abschließen (fehlende zufällig) und den Rundentakt starten. */
+  private finishPeek() {
+    const m = this.match as MatchState;
+    const now = this.deps.now();
+    if (now < m.hatch.revealEndsAt) {
+      // Nicht vor dem Ende der Rollen-Einblendung.
+      m.peekDeadline = m.hatch.revealEndsAt;
+      this.armPhaseTimer();
+      return;
+    }
+    if (this.config.peek.enabled) {
+      const rng = createRng(m.seed + 1);
+      for (const owner of this.seating) {
+        const options = this.peekOptionsFor(owner);
+        if (!m.peekChoices[owner] && options.length) m.peekChoices[owner] = rng.pick(options);
+      }
+    }
+    const t = this.config.timing;
+    m.timeline = createTimeline({
+      startsAt: now + Math.max(this.config.hatching.settleMs, t.nextLeadMs),
+      stationMs: t.stationSeconds * 1000,
+      handoverMs: t.handoverSeconds * 1000,
+      rounds: this.roundsTotal(),
+    });
+    this.phase = 'rounds';
+    this.cancelPhaseTimer?.();
+    this.cancelPhaseTimer = null;
+    this.armTimer();
+    this.changed();
+  }
+
+  /** Frist der Spick-Wahl überwachen. */
+  private armPhaseTimer() {
+    this.cancelPhaseTimer?.();
+    this.cancelPhaseTimer = null;
+    if (this.phase !== 'peekChoice' || !this.match) return;
+    this.cancelPhaseTimer = this.deps.schedule(this.match.peekDeadline, () => {
+      this.cancelPhaseTimer = null;
+      if (this.phase === 'peekChoice') this.finishPeek();
+    });
+  }
+
+  // --- Runden ------------------------------------------------------------------
+
+  /** Timer auf die nächste Takt-Grenze; am Ende → Heimkehr. */
+  private armTimer() {
     this.cancelTimer?.();
     this.cancelTimer = null;
-    this.cancelRevealTimer?.();
-    this.cancelRevealTimer = null;
-    this.timeline = null;
-    this.finishedAt = null;
-    this.hatched.clear();
-    this.hatch = null;
-    this.roles = null;
-    this.seed = null;
+    const m = this.match;
+    if (this.phase !== 'rounds' || !m?.timeline) return;
+    const now = this.deps.now();
+    if (positionAt(m.timeline, now).stage === 'done') {
+      this.phase = 'homecoming';
+      m.finishedAt = now;
+      this.changed();
+      return;
+    }
+    const at = nextBoundary(m.timeline, now);
+    if (at !== null) this.cancelTimer = this.deps.schedule(at, () => this.armTimer());
   }
+
+  /** Laufender Stand vom Handy des Eigentümers (nur das eigene Küken). */
+  reportChick(ownerId: string, report: ChickReport) {
+    const m = this.match;
+    if (!m || !MATCH_PHASES.includes(this.phase)) return;
+    const prev = m.reports[ownerId];
+    if (prev && prev.at > report.at) return;
+    m.reports[ownerId] = report;
+    // Kein Senden an alle: Der Stand ist erst ab der Heimkehr öffentlich (Admin-Debug folgt in M6).
+  }
+
+  /** Statistik einer abgeschlossenen Station; die Aufzeichnung bleibt nur für die Spick-Station. */
+  recordStation(ownerId: string, stats: StationStats) {
+    const m = this.match;
+    if (!m || !MATCH_PHASES.includes(this.phase) || this.phase === 'peekChoice') {
+      throw new RoomError('not_allowed', 'Gerade nicht möglich.');
+    }
+    if (stats.round >= this.roundsTotal()) throw new RoomError('bad_message', 'Unbekannte Runde.');
+    const target = m.peekChoices[ownerId];
+    const peek = target ? peekRound(ownerId, target, this.seating, this.roundsTotal()) : null;
+    const kept = stats.round === peek ? stats : { ...stats, samples: [] };
+    const byRound = (m.stations[ownerId] ??= {});
+    byRound[String(stats.round)] = kept;
+    this.changed();
+  }
+
+  /** Endstand eines Kükens: letzte Meldung oder letzte Station. */
+  private chickOutcome(ownerId: string): ChickOutcome {
+    const m = this.match as MatchState;
+    const report = m.reports[ownerId];
+    const stations = Object.values(m.stations[ownerId] ?? {}).sort((a, b) => b.round - a.round);
+    const last = stations[0];
+    if (last && (!report || report.round === null || report.round <= last.round)) {
+      return { wellbeing: last.wellbeingEnd, alive: !stations.some((s) => s.died) };
+    }
+    if (report) return { wellbeing: report.wellbeing, alive: report.alive };
+    return { wellbeing: 1, alive: true };
+  }
+
+  private chickOutcomes(): Record<string, ChickOutcome> {
+    return Object.fromEntries(this.seating.map((id) => [id, this.chickOutcome(id)]));
+  }
+
+  // --- Heimkehr, Abstimmung, Enthüllung ----------------------------------------------
+
+  private storyFor(ownerId: string) {
+    const m = this.match as MatchState;
+    const stations = Object.values(m.stations[ownerId] ?? {}).sort((a, b) => a.round - b.round);
+    const character = m.characters[ownerId] ?? { likes: [], dislikes: [] };
+    const hints = generateHints(
+      stations,
+      character,
+      this.config,
+      createRng((m.chickSeeds[ownerId] ?? 0) + 7),
+    );
+    const targetId = m.peekChoices[ownerId];
+    const round = targetId ? peekRound(ownerId, targetId, this.seating, this.roundsTotal()) : null;
+    const stats = round === null ? undefined : m.stations[ownerId]?.[String(round)];
+    return { hints, peek: targetId && stats ? { targetId, stats } : null };
+  }
+
+  private startVoting() {
+    this.requirePhase('homecoming');
+    const m = this.match as MatchState;
+    if (!Object.values(m.roles).includes('cuckoo')) return this.doReveal(null, 'no_cuckoo');
+    m.votes = {};
+    m.voting = { candidates: [...this.seating], runoff: 0 };
+    this.phase = 'voting';
+    this.changed();
+  }
+
+  castVote(voterId: string, targetId: string | null) {
+    this.requirePhase('voting');
+    const m = this.match as MatchState;
+    if (targetId === null) {
+      delete m.votes[voterId];
+    } else {
+      if (!m.voting?.candidates.includes(targetId)) {
+        throw new RoomError('bad_message', 'Nicht wählbar.');
+      }
+      if (targetId === voterId) throw new RoomError('not_allowed', 'Nicht für dich selbst.');
+      m.votes[voterId] = targetId;
+    }
+    this.changed();
+  }
+
+  private closeVoting() {
+    this.requirePhase('voting');
+    const m = this.match as MatchState;
+    const voting = m.voting as NonNullable<MatchState['voting']>;
+    const outcome = decideVote(tallyVotes(m.votes, voting.candidates), voting.runoff, this.config);
+    if (outcome.kind === 'runoff') {
+      m.votes = {};
+      m.voting = { candidates: outcome.candidates, runoff: voting.runoff + 1 };
+      this.changed();
+      return;
+    }
+    this.doReveal(
+      outcome.kind === 'accused' ? outcome.playerId : null,
+      outcome.kind === 'nobody' ? outcome.reason : null,
+    );
+  }
+
+  /** Enthüllung zu einem gemeinsamen Zeitpunkt, dazu die Wertung mit allen Rollen. */
+  private doReveal(accusedId: string | null, reason: 'no_votes' | 'tie' | 'no_cuckoo' | null) {
+    const m = this.match as MatchState;
+    m.reveal = {
+      at: this.deps.now() + this.config.timing.nextLeadMs,
+      accusedId,
+      accusedRole: accusedId ? (m.roles[accusedId] ?? null) : null,
+      reason,
+    };
+    m.result = scoreGame({
+      roles: m.roles,
+      chicks: this.chickOutcomes(),
+      accusedId,
+      config: this.config,
+    });
+    m.voting = null;
+    this.phase = 'reveal';
+    this.changed();
+  }
+
+  // --- Steuerung ---------------------------------------------------------------
 
   control(by: string, action: GameControl) {
     this.requireHost(by);
-    if (action === 'abort') return this.backToLobby();
-    if (action === 'hatchNow') {
-      this.requirePhase('hatching');
-      return this.hatchAll();
+    switch (action) {
+      case 'abort':
+        return this.backToLobby();
+      case 'hatchNow':
+        this.requirePhase('hatching');
+        return this.hatchAll();
+      case 'peekNow':
+        this.requirePhase('peekChoice');
+        return this.finishPeek();
+      case 'startVoting':
+        return this.startVoting();
+      case 'closeVoting':
+        return this.closeVoting();
     }
     this.requirePhase('rounds');
-    const tl = this.timeline as Timeline;
+    const m = this.match as MatchState;
+    const tl = m.timeline as Timeline;
     const now = this.deps.now();
     const lead = this.config.timing.nextLeadMs;
     const next =
@@ -332,9 +591,20 @@ export class Room {
           ? resumeTimeline(tl, now + lead)
           : skipStage(tl, now, lead);
     if (next === tl) return;
-    this.timeline = next;
+    m.timeline = next;
     this.armTimer();
     this.changed();
+  }
+
+  private resetGame() {
+    this.cancelTimer?.();
+    this.cancelTimer = null;
+    this.cancelRevealTimer?.();
+    this.cancelRevealTimer = null;
+    this.cancelPhaseTimer?.();
+    this.cancelPhaseTimer = null;
+    this.hatched.clear();
+    this.match = null;
   }
 
   private backToLobby() {
@@ -345,25 +615,10 @@ export class Room {
     this.changed();
   }
 
-  /** Timer auf die nächste Takt-Grenze; am Ende → Heimkehr. */
-  private armTimer() {
-    this.cancelTimer?.();
-    this.cancelTimer = null;
-    if (this.phase !== 'rounds' || !this.timeline) return;
-    const now = this.deps.now();
-    if (positionAt(this.timeline, now).stage === 'done') {
-      this.phase = 'homecoming';
-      this.finishedAt = now;
-      this.changed();
-      return;
-    }
-    const at = nextBoundary(this.timeline, now);
-    if (at !== null) this.cancelTimer = this.deps.schedule(at, () => this.armTimer());
-  }
-
   dispose() {
     this.cancelTimer?.();
     this.cancelRevealTimer?.();
+    this.cancelPhaseTimer?.();
     for (const cancel of this.removalTimers.values()) cancel();
     this.removalTimers.clear();
   }
@@ -371,9 +626,11 @@ export class Room {
   // --- Ansichten & Speichern ---------------------------------------------------
 
   viewFor(playerId: string): RoomView {
+    const m = this.match;
+    const phase = this.phase;
     return {
       code: this.code,
-      phase: this.phase,
+      phase,
       hostId: this.hostId,
       players: this.seating.map((id) => {
         const p = this.players.get(id) as Player;
@@ -387,22 +644,59 @@ export class Room {
       config: this.config,
       settings: this.settings,
       availableModules: [...this.deps.availableModules],
-      timeline: this.timeline,
-      hatch: this.hatch,
+      timeline: m?.timeline ?? null,
+      hatch: m?.hatch ?? null,
+      peek:
+        m && phase === 'peekChoice'
+          ? { deadline: m.peekDeadline, chosenCount: Object.keys(m.peekChoices).length }
+          : null,
+      chicks: m && PUBLIC_CHICK_PHASES.includes(phase) ? this.chickOutcomes() : null,
+      voting:
+        m?.voting && phase === 'voting'
+          ? {
+              candidates: m.voting.candidates,
+              counts: tallyVotes(m.votes, m.voting.candidates),
+              votedCount: Object.keys(m.votes).length,
+              runoff: m.voting.runoff,
+            }
+          : null,
+      reveal: phase === 'reveal' ? (m?.reveal ?? null) : null,
+      result: phase === 'reveal' ? (m?.result ?? null) : null,
       you: { playerId, ...this.secretsFor(playerId) },
     };
   }
 
-  /** Geheimes nur für diesen Spieler – die Rolle nur bis zum Ende der Einblendung. */
-  private secretsFor(playerId: string): { role?: Role } {
-    const role = this.roles?.[playerId];
-    if (!role || !this.hatch || this.deps.now() >= this.hatch.revealEndsAt) return {};
-    return { role };
+  /** Geheimes nur für diesen Spieler. */
+  private secretsFor(playerId: string): Partial<RoomView['you']> {
+    const m = this.match;
+    if (!m) return {};
+    const out: Partial<RoomView['you']> = {};
+    const role = m.roles[playerId];
+    // Rolle nur bis zum Ende der Einblendung – danach kennt das Handy sie nicht mehr.
+    if (role && this.deps.now() < m.hatch.revealEndsAt) out.role = role;
+    if (this.config.peek.enabled) {
+      out.peekOptions = this.peekOptionsFor(playerId);
+      out.peekChoice = m.peekChoices[playerId] ?? null;
+    }
+    const character = m.characters[playerId];
+    if (character) {
+      out.chick = {
+        character,
+        seed: m.chickSeeds[playerId] ?? 0,
+        reportedRounds: Object.keys(m.stations[playerId] ?? {})
+          .map(Number)
+          .sort((a, b) => a - b),
+        last: m.reports[playerId] ?? null,
+      };
+    }
+    if (PUBLIC_CHICK_PHASES.includes(this.phase)) out.story = this.storyFor(playerId);
+    if (this.phase === 'voting') out.vote = m.votes[playerId] ?? null;
+    return out;
   }
 
-  /** Rolle eines Spielers (nur serverintern, z. B. Wertung). */
+  /** Rolle eines Spielers (nur serverintern). */
   roleOf(playerId: string): Role | null {
-    return this.roles?.[playerId] ?? null;
+    return this.match?.roles[playerId] ?? null;
   }
 
   snapshot(): RoomSnapshot {
@@ -416,15 +710,11 @@ export class Room {
       seating: [...this.seating],
       presetOverride: this.presetOverride as Record<string, unknown>,
       settings: this.settings,
-      timeline: this.timeline,
-      finishedAt: this.finishedAt,
       hatched: Object.fromEntries(
         [...this.hatched].map(([id, kinds]) => [id, Object.fromEntries(kinds)]),
       ),
       calibrations: Object.fromEntries(this.calibrations),
-      hatch: this.hatch,
-      roles: this.roles,
-      seed: this.seed,
+      match: this.match ? structuredClone(this.match) : null,
     };
   }
 
@@ -438,16 +728,13 @@ export class Room {
     room.presetOverride = snap.presetOverride as ConfigOverride;
     room.settings = snap.settings;
     room.config = room.resolve(snap.settings);
-    room.timeline = snap.timeline;
-    room.finishedAt = snap.finishedAt;
     for (const [id, kinds] of Object.entries(snap.hatched)) {
       room.hatched.set(id, new Map(Object.entries(kinds) as [CareKind, CareMethod][]));
     }
     for (const [id, cal] of Object.entries(snap.calibrations)) room.calibrations.set(id, cal);
-    room.hatch = snap.hatch;
-    room.roles = snap.roles;
-    room.seed = snap.seed;
+    room.match = snap.match ? structuredClone(snap.match) : null;
     room.armRevealTimer();
+    room.armPhaseTimer();
     room.armTimer();
     if (room.phase === 'lobby') for (const p of room.players.values()) room.scheduleRemoval(p);
     return room;

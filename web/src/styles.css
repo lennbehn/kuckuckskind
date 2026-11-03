@@ -540,3 +540,208 @@ legend {
 .role {
   font-size: 1.8rem;
 }
+
+/* --- M4: Küken, Pflege, Heimkehr, Abstimmung, Enthüllung -------------------- */
+
+.station {
+  gap: 6px;
+}
+
+.chick-area {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 230px;
+  touch-action: none;
+  border-radius: 28px;
+}
+
+.chick {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: 50% 50% 46% 46% / 55% 55% 45% 45%;
+  border: 2.5px solid var(--pencil);
+  transition: background 0.6s ease;
+  animation: breathe 3.2s ease-in-out infinite;
+}
+
+.chick-face {
+  line-height: 1;
+}
+
+.chick-hurt {
+  animation: shake 0.25s linear infinite;
+}
+
+.chick-gone {
+  filter: grayscale(1);
+  opacity: 0.6;
+  animation: none;
+}
+
+.hearts {
+  position: absolute;
+  top: -10px;
+  right: 10px;
+  font-size: 1.8rem;
+  animation: float-up 1.4s ease-out infinite;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.025, 0.985);
+  }
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px) rotate(-2deg);
+  }
+  75% {
+    transform: translateX(5px) rotate(2deg);
+  }
+}
+
+@keyframes float-up {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-40px);
+    opacity: 0;
+  }
+}
+
+.need-hints {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-height: 3rem;
+}
+
+.care-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.care-button {
+  padding: 14px 18px;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: none;
+}
+
+.care-button:active {
+  background: var(--chick);
+}
+
+.choice-list,
+.vote-list,
+.chick-list,
+.peek-lines {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  width: min(100%, 360px);
+}
+
+.choice-list li,
+.vote-list li {
+  margin: 6px 0;
+}
+
+.choice-list button,
+.vote-list button {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  font-size: 1.1rem;
+}
+
+.votes {
+  letter-spacing: 2px;
+  color: var(--alert);
+}
+
+.chick-list li {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px dashed rgb(107 93 74 / 0.35);
+}
+
+.story {
+  text-align: left;
+}
+
+.quote {
+  font-family: 'Fraunces', Georgia, serif;
+  font-style: italic;
+  font-size: 1.1rem;
+  margin: 8px 0;
+}
+
+.peek-lines li {
+  padding: 3px 0;
+}
+
+.peek-chart {
+  width: 100%;
+  height: auto;
+  margin: 4px 0 8px;
+}
+
+.flip-card {
+  width: min(100%, 320px);
+  height: 260px;
+  perspective: 900px;
+}
+
+.flip-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 1.2s cubic-bezier(0.3, 1.4, 0.5, 1);
+  transform-style: preserve-3d;
+}
+
+.flip-card.flipped .flip-inner {
+  transform: rotateY(180deg);
+}
+
+.flip-front,
+.flip-back {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--pencil);
+  border-radius: 24px;
+  background: rgb(255 255 255 / 0.5);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  padding: 16px;
+}
+
+.flip-back {
+  transform: rotateY(180deg);
+}
+
+.winner {
+  font-size: 1.8rem;
+}

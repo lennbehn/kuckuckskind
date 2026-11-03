@@ -2,6 +2,10 @@ import { z } from 'zod';
 import { CareKindSchema, GameConfigSchema, ModuleIdSchema } from '../config/schema.ts';
 import type { ConfigOverride } from '../config/resolve.ts';
 import { RoleSchema } from '../game/phase.ts';
+import { ChickOutcomeSchema, GameResultSchema } from '../game/scoring.ts';
+import { CharacterSchema } from '../chick/character.ts';
+import { StationStatsSchema } from '../chick/simulation.ts';
+import { NeedSchema } from '../config/schema.ts';
 
 /** Raumcodes: 4 Konsonanten ohne verwechselbare Zeichen – leicht vorzulesen, keine Wörter. */
 export const ROOM_CODE_ALPHABET = 'BCDFGHJKLMNPQRSTVWXZ';
@@ -17,10 +21,21 @@ export const PlayerNameSchema = z
   .pipe(z.string().min(1, 'Name fehlt').max(20, 'Name zu lang (höchstens 20 Zeichen)'));
 
 /**
- * Phasen des Raums. Schlüpfen und Rollen-Einblendung sind der Anfang von `rounds`
- * (vor `timeline.t0`, gesteuert über `hatch`). M4 ergänzt Spick-Wahl, Abstimmung usw.
+ * Phasen des Raums:
+ *   lobby → hatching → peekChoice → rounds → homecoming → voting → reveal
+ * `peekChoice` beginnt mit dem gemeinsamen Schlüpfen und der geheimen Rollen-Einblendung
+ * (bis `hatch.revealEndsAt`), danach wählt jeder seine Spick-Station.
+ * `reveal` enthält Enthüllung und Wertung.
  */
-export const RoomPhaseSchema = z.enum(['lobby', 'hatching', 'rounds', 'homecoming']);
+export const RoomPhaseSchema = z.enum([
+  'lobby',
+  'hatching',
+  'peekChoice',
+  'rounds',
+  'homecoming',
+  'voting',
+  'reveal',
+]);
 export type RoomPhase = z.infer<typeof RoomPhaseSchema>;
 
 /**
@@ -123,14 +138,88 @@ export const RoomViewSchema = z.object({
       revealEndsAt: z.number(),
     })
     .nullable(),
+  /** Spick-Wahl läuft: Frist und wie viele schon gewählt haben (nicht wer wen). */
+  peek: z.object({ deadline: z.number(), chosenCount: z.number().int() }).nullable(),
+  /** Zustand aller Küken – ab der Heimkehr öffentlich. */
+  chicks: z.record(z.string(), ChickOutcomeSchema).nullable(),
+  /** Abstimmung: nur Anzahl der Stimmen je Kandidat. */
+  voting: z
+    .object({
+      candidates: z.array(z.string()),
+      counts: z.record(z.string(), z.number().int()),
+      votedCount: z.number().int(),
+      /** 0 = erste Abstimmung, 1 = erste Stichwahl … */
+      runoff: z.number().int(),
+    })
+    .nullable(),
+  /** Enthüllung: zum Zeitpunkt `at` dreht sich überall das Küken des Beschuldigten um. */
+  reveal: z
+    .object({
+      at: z.number(),
+      accusedId: z.string().nullable(),
+      accusedRole: RoleSchema.nullable(),
+      /** Warum niemand beschuldigt wurde. */
+      reason: z.enum(['no_votes', 'tie', 'no_cuckoo']).nullable(),
+    })
+    .nullable(),
+  /** Wertung mit allen Rollen – erst in der Phase `reveal`. */
+  result: GameResultSchema.nullable(),
   you: z.object({
     playerId: z.string(),
     /** Eigene Rolle – nur bis zum Ende der Einblendung, danach nie wieder. */
     role: RoleSchema.optional(),
+    /** Spick-Wahl: wählbare Mitspieler und eigene Wahl (geheim). */
+    peekOptions: z.array(z.string()).optional(),
+    peekChoice: z.string().nullable().optional(),
+    /** Eigenes Küken: Charakter, schon gemeldete Runden, letzter Stand (zum Fortsetzen). */
+    chick: z
+      .object({
+        character: CharacterSchema,
+        seed: z.number().int(),
+        reportedRounds: z.array(z.number().int()),
+        last: z.lazy(() => ChickReportSchema).nullable(),
+      })
+      .optional(),
+    /** Heimkehr: vage Hinweise und die Spick-Aufzeichnung des eigenen Kükens. */
+    story: z
+      .object({
+        hints: z.array(z.string()),
+        peek: z.object({ targetId: z.string(), stats: StationStatsSchema }).nullable(),
+      })
+      .optional(),
+    /** Eigene Stimme (geheim). */
+    vote: z.string().nullable().optional(),
   }),
 });
 export type RoomView = z.infer<typeof RoomViewSchema>;
 
-/** `hatchNow`: Host lässt alle Küken sofort schlüpfen (wenn ein Gerät hängt). */
-export const GameControlSchema = z.enum(['pause', 'resume', 'skip', 'abort', 'hatchNow']);
+/**
+ * Host-Steuerung. `hatchNow`: alle sofort schlüpfen lassen; `peekNow`: Spick-Wahl beenden
+ * (Rest zufällig); `startVoting`/`closeVoting`: Abstimmung öffnen bzw. auszählen.
+ */
+export const GameControlSchema = z.enum([
+  'pause',
+  'resume',
+  'skip',
+  'abort',
+  'hatchNow',
+  'peekNow',
+  'startVoting',
+  'closeVoting',
+]);
+
+const needRecord = z.record(NeedSchema, z.number());
+
+/** Laufender Stand eines Kükens, gemeldet vom Handy des Eigentümers. */
+export const ChickReportSchema = z.object({
+  /** Server-Zeit der Messung. */
+  at: z.number(),
+  round: z.number().int().nullable(),
+  needs: needRecord,
+  urgentMs: needRecord,
+  wellbeing: z.number().min(0).max(1),
+  alive: z.boolean(),
+  stationLoss: z.number().nonnegative(),
+});
+export type ChickReport = z.infer<typeof ChickReportSchema>;
 export type GameControl = z.infer<typeof GameControlSchema>;

@@ -7,12 +7,14 @@ import {
   type ClientMessage,
   type CareKind,
   type CareMethod,
+  type ChickReport,
   type ClockSample,
   type DeviceCalibration,
   type ErrorCode,
   type GameControl,
   type HostSettings,
   type RoomView,
+  type StationStats,
 } from '@kuckuckskind/shared';
 import type { TokenStorage } from './session.ts';
 
@@ -288,6 +290,20 @@ export class GameClient {
   /** Technik-Check melden; ohne Verbindung still verwerfen (wird später erneut gesendet). */
   sendCalibration(calibration: DeviceCalibration) {
     this.send({ type: 'device.calibration', calibration });
+  }
+  choosePeek(targetId: string) {
+    this.act({ type: 'peek.choose', targetId });
+  }
+  vote(targetId: string | null) {
+    this.act({ type: 'vote.cast', targetId });
+  }
+  /** Laufender Stand des eigenen Kükens; ohne Verbindung still verwerfen. */
+  reportChick(report: ChickReport) {
+    this.send({ type: 'chick.report', report });
+  }
+  /** Stationsstatistik; fehlt die Verbindung, sendet der Runner später erneut. */
+  sendStation(stats: StationStats) {
+    this.send({ type: 'chick.station', stats });
   }
   dismissError() {
     this.set({ lastError: null });

@@ -147,11 +147,9 @@ describe('Raum über WebSocket', () => {
       }
     }
     const [ra, rb, rc] = (await Promise.all(
-      [anna, ben, cem].map((cl) => cl.room((r) => r.phase === 'rounds')),
+      [anna, ben, cem].map((cl) => cl.room((r) => r.phase === 'peekChoice')),
     )) as [RoomView, RoomView, RoomView];
-    expect(ra.timeline).toEqual(rb.timeline);
-    expect(rb.timeline).toEqual(rc.timeline);
-    expect(ra.timeline?.rounds).toBe(3);
+    expect(ra.hatch).toEqual(rb.hatch);
     expect(ra.hatch).toEqual(rc.hatch);
     // Jeder bekommt genau seine eigene Rolle, einer ist Kuckuck.
     const roles = [ra, rb, rc].map((r) => r.you.role);
@@ -199,7 +197,7 @@ describe('Raum über WebSocket', () => {
     anna.send({ type: 'game.start' });
     await ben.room((r) => r.phase === 'hatching');
     anna.send({ type: 'game.control', action: 'hatchNow' });
-    await ben.room((r) => r.phase === 'rounds');
+    await ben.room((r) => r.phase === 'peekChoice');
     const token = ben.token;
     await app.close();
 
@@ -207,7 +205,7 @@ describe('Raum über WebSocket', () => {
     const again = await TestClient.connect(port, token);
     const view = await again.room();
     expect(view.code).toBe(code);
-    expect(view.phase).toBe('rounds');
+    expect(view.phase).toBe('peekChoice');
   });
 
   it('bremst Nachrichtenfluten', async () => {

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { positionAt } from '@kuckuckskind/shared';
+import { emptyStats, holderOf, positionAt, type StationStats } from '@kuckuckskind/shared';
 import { Room, type RoomDeps } from '../src/rooms/room.ts';
 import { RoomSnapshotSchema } from '../src/rooms/snapshot.ts';
 import { FakeClock } from './fake-clock.ts';
@@ -14,11 +14,18 @@ function newRoom() {
 }
 
 /** Start + alle Eier fertig → Runden laufen (Takt beginnt nach Schlüpfen und Einblendung). */
-function startRounds(room: Room, host: string) {
+function hatchAllEggs(room: Room, host: string) {
   room.start(host);
   for (const id of room.seating) {
     for (const kind of room.config.care.activeKinds) room.recordHatch(id, kind, 'sensor');
   }
+}
+
+/** Start → alle Eier → Einblendung abwarten → Spick-Wahl beenden → Runden laufen. */
+function startRounds(room: Room, host: string) {
+  hatchAllEggs(room, host);
+  clock.advance(room.hatch!.revealEndsAt - clock.now());
+  room.control(host, 'peekNow');
 }
 
 function roomWith(n: number) {
@@ -123,7 +130,9 @@ describe('Partie', () => {
     expect(room.phase).toBe('rounds');
     const tl = room.timeline!;
     expect(tl.rounds).toBe(3);
-    expect(tl.t0).toBe(room.hatch!.revealEndsAt + room.config.hatching.settleMs);
+    expect(tl.t0).toBe(
+      clock.now() + Math.max(room.config.hatching.settleMs, room.config.timing.nextLeadMs),
+    );
     expect(() => room.addPlayer('Spät', 'hx')).toThrow(/läuft schon/);
 
     clock.advance(tl.t0 - clock.now() + 2 * (tl.stationMs + tl.handoverMs) + 1);
@@ -224,7 +233,7 @@ describe('Ausbrüten', () => {
     expect(room.phase).toBe('hatching');
     expect(room.viewFor(host).players[2]?.hatched).toEqual(kinds.slice(0, -1));
     room.recordHatch(last, kinds[kinds.length - 1]!, 'sensor');
-    expect(room.phase).toBe('rounds');
+    expect(room.phase).toBe('peekChoice');
     expect(room.hatch!.at).toBe(clock.now() + room.config.timing.nextLeadMs);
   });
 
@@ -240,7 +249,7 @@ describe('Ausbrüten', () => {
     room.start(host);
     expect(() => room.control(ids[1] as string, 'hatchNow')).toThrow(/Host/);
     room.control(host, 'hatchNow');
-    expect(room.phase).toBe('rounds');
+    expect(room.phase).toBe('peekChoice');
   });
 
   it('verteilt genau einen Kuckuck', () => {
@@ -253,7 +262,7 @@ describe('Ausbrüten', () => {
 
   it('jeder sieht nur die eigene Rolle – und nur während der Einblendung', () => {
     const { room, ids, host } = roomWith(4);
-    startRounds(room, host);
+    hatchAllEggs(room, host);
     for (const id of ids) {
       const view = room.viewFor(id);
       expect(view.you.role).toBe(room.roleOf(id));
@@ -293,5 +302,200 @@ describe('Ausbrüten', () => {
     restored.control(host, 'hatchNow');
     const snap = RoomSnapshotSchema.parse(restored.snapshot());
     expect(Room.restore(snap, deps).roles).toEqual(restored.roles);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M4: Spick-Wahl, Stationen, Heimkehr, Abstimmung, Enthüllung
+// ---------------------------------------------------------------------------
+
+const stats = (round: number, patch: Partial<StationStats> = {}): StationStats => ({
+  ...emptyStats(round, 1),
+  durationMs: 60_000,
+  samples: [{ t: 0, w: 1, n: [0.1, 0.1, 0.1], c: [] }],
+  ...patch,
+});
+
+/** Partie bis zur Heimkehr; jedes Handy meldet seine Stationen. */
+function playToHomecoming(
+  room: Room,
+  host: string,
+  perStation?: (owner: string, round: number) => Partial<StationStats>,
+) {
+  startRounds(room, host);
+  const tl = room.timeline!;
+  for (let r = 0; r < tl.rounds; r++) {
+    for (const owner of room.seating) room.recordStation(owner, stats(r, perStation?.(owner, r)));
+  }
+  clock.advance(tl.t0 - clock.now() + tl.rounds * (tl.stationMs + tl.handoverMs));
+  expect(room.phase).toBe('homecoming');
+}
+
+describe('Spick-Wahl', () => {
+  it('jeder wählt geheim; wenn alle gewählt haben, beginnen die Runden', () => {
+    const { room, ids, host } = roomWith(3);
+    hatchAllEggs(room, host);
+    expect(() => room.choosePeek(ids[0]!, ids[1]!)).toThrow(/Noch nicht/);
+    clock.advance(room.hatch!.revealEndsAt - clock.now());
+
+    room.choosePeek(ids[0]!, ids[1]!);
+    expect(() => room.choosePeek(ids[1]!, ids[1]!)).toThrow(/nicht wählen/);
+    const other = room.viewFor(ids[1]!);
+    expect(other.peek?.chosenCount).toBe(1);
+    expect(other.you.peekChoice).toBeNull();
+    expect(JSON.stringify(other)).not.toContain(`"peekChoice":"${ids[1]}"`);
+    expect(room.viewFor(ids[0]!).you.peekChoice).toBe(ids[1]);
+
+    room.choosePeek(ids[1]!, ids[2]!);
+    room.choosePeek(ids[2]!, ids[0]!);
+    expect(room.phase).toBe('rounds');
+  });
+
+  it('nach Ablauf der Frist wird für die Übrigen zufällig gewählt', () => {
+    const { room, host } = roomWith(4);
+    hatchAllEggs(room, host);
+    clock.advance(room.match!.peekDeadline - clock.now());
+    expect(room.phase).toBe('rounds');
+    for (const id of room.seating)
+      expect(room.peekOptionsFor(id)).toContain(room.match!.peekChoices[id]);
+  });
+
+  it('ohne Spick-Station geht es nach der Einblendung direkt los', () => {
+    const { room, host } = roomWith(3);
+    room.applyPreset({ peek: { enabled: false } });
+    hatchAllEggs(room, host);
+    clock.advance(room.hatch!.revealEndsAt - clock.now());
+    expect(room.phase).toBe('rounds');
+    expect(room.viewFor(host).you.peekOptions).toBeUndefined();
+  });
+});
+
+describe('Stationen und Heimkehr', () => {
+  it('Aufzeichnung bleibt nur für die Spick-Station', () => {
+    const { room, ids, host } = roomWith(3);
+    hatchAllEggs(room, host);
+    clock.advance(room.hatch!.revealEndsAt - clock.now());
+    const [a, b, c] = ids as [string, string, string];
+    room.choosePeek(a, c);
+    room.choosePeek(b, c);
+    room.choosePeek(c, a);
+    const peekR = [0, 1, 2].find((r) => holderOf(a, r, room.seating) === c)!;
+    for (let r = 0; r < 3; r++) room.recordStation(a, stats(r));
+    const st = room.match!.stations[a]!;
+    expect(st[String(peekR)]!.samples).toHaveLength(1);
+    for (const r of [0, 1, 2].filter((x) => x !== peekR))
+      expect(st[String(r)]!.samples).toHaveLength(0);
+    expect(room.viewFor(a).you.chick?.reportedRounds).toEqual([0, 1, 2]);
+  });
+
+  it('jedes Handy bekommt Charakter und Seed nur des eigenen Kükens', () => {
+    const { room, ids, host } = roomWith(3);
+    hatchAllEggs(room, host);
+    const v = room.viewFor(ids[1]!);
+    expect(v.you.chick?.character).toEqual(room.match!.characters[ids[1]!]);
+    expect(JSON.stringify(v)).not.toContain('chickSeeds');
+  });
+
+  it('Heimkehr: öffentlicher Küken-Zustand, eigene Hinweise und Spick-Aufzeichnung', () => {
+    const { room, ids, host } = roomWith(3);
+    playToHomecoming(room, host, (owner, r) =>
+      r === 1 ? { roughMs: 5000, loss: 0.2, wellbeingEnd: 0.8 } : {},
+    );
+    const v = room.viewFor(ids[0]!);
+    expect(Object.keys(v.chicks!)).toEqual(room.seating);
+    expect(v.you.story?.hints.length).toBeGreaterThan(0);
+    expect(v.you.story?.hints.join(' ')).toMatch(/geschüttelt|herumgeschaukelt/);
+    expect(v.you.story?.peek?.targetId).toBe(room.match!.peekChoices[ids[0]!]);
+    expect(v.you.story?.peek?.stats.samples.length).toBe(1);
+  });
+});
+
+describe('Abstimmung und Enthüllung', () => {
+  function toVoting(n = 4) {
+    const r = roomWith(n);
+    playToHomecoming(r.room, r.host);
+    r.room.control(r.host, 'startVoting');
+    expect(r.room.phase).toBe('voting');
+    const cuckoo = r.ids.find((id) => r.room.roleOf(id) === 'cuckoo')!;
+    const fosters = r.ids.filter((id) => id !== cuckoo);
+    return { ...r, cuckoo, fosters };
+  }
+
+  it('nur Stimmenzahlen sind sichtbar, die eigene Stimme nur für einen selbst', () => {
+    const { room, cuckoo, fosters } = toVoting();
+    room.castVote(fosters[0]!, cuckoo);
+    room.castVote(fosters[1]!, cuckoo);
+    const v = room.viewFor(fosters[2]!);
+    expect(v.voting?.counts[cuckoo]).toBe(2);
+    expect(v.voting?.votedCount).toBe(2);
+    expect(v.you.vote).toBeNull();
+    expect(room.viewFor(fosters[0]!).you.vote).toBe(cuckoo);
+    expect(() => room.castVote(cuckoo, cuckoo)).toThrow(/selbst/);
+    // Stimme ändern und zurückziehen
+    room.castVote(fosters[1]!, fosters[0]!);
+    room.castVote(fosters[1]!, null);
+    expect(room.viewFor(cuckoo).voting?.counts[cuckoo]).toBe(1);
+    // Keine Rollen während der Abstimmung
+    expect(JSON.stringify(v)).not.toMatch(/"(cuckoo|foster)"/);
+  });
+
+  it('Kuckuck enttarnt, alle überleben → Pflegeeltern gewinnen; Enthüllung gleichzeitig', () => {
+    const { room, host, cuckoo, fosters } = toVoting();
+    for (const f of fosters) room.castVote(f, cuckoo);
+    room.control(host, 'closeVoting');
+    expect(room.phase).toBe('reveal');
+    const v = room.viewFor(fosters[0]!);
+    expect(v.reveal).toMatchObject({ accusedId: cuckoo, accusedRole: 'cuckoo' });
+    expect(v.reveal!.at).toBe(clock.now() + room.config.timing.nextLeadMs);
+    expect(v.result?.winner).toBe('fosters');
+    expect(v.result?.roles[cuckoo]).toBe('cuckoo');
+  });
+
+  it('Gleichstand → Stichwahl; erneuter Gleichstand → niemand beschuldigt → Kuckuck gewinnt', () => {
+    const { room, host, cuckoo, fosters } = toVoting(4);
+    const [f1, f2, f3] = fosters as [string, string, string];
+    room.castVote(f1, f2);
+    room.castVote(f2, f1);
+    room.control(host, 'closeVoting');
+    expect(room.phase).toBe('voting');
+    expect(room.viewFor(f3).voting).toMatchObject({
+      runoff: 1,
+      candidates: [f1, f2].sort((a, b) => room.seating.indexOf(a) - room.seating.indexOf(b)),
+    });
+    expect(() => room.castVote(f3, cuckoo)).toThrow(/Nicht wählbar/);
+    room.castVote(f3, f1);
+    room.castVote(cuckoo, f2);
+    room.control(host, 'closeVoting');
+    expect(room.viewFor(f3).reveal).toMatchObject({ accusedId: null, reason: 'tie' });
+    expect(room.viewFor(f3).result?.winner).toBe('cuckoo');
+  });
+
+  it('ohne Kuckuck keine Abstimmung', () => {
+    const { room, host } = roomWith(3);
+    room.applyPreset({ room: { cuckooCount: 0 } });
+    playToHomecoming(room, host);
+    room.control(host, 'startVoting');
+    expect(room.phase).toBe('reveal');
+    expect(room.viewFor(host).reveal?.reason).toBe('no_cuckoo');
+    expect(room.viewFor(host).result?.winner).toBe('fosters');
+  });
+
+  it('gestorbenes Küken zählt in der Wertung', () => {
+    const r = roomWith(3);
+    playToHomecoming(r.room, r.host, (owner, round) =>
+      owner === r.ids[0] && round === 2 ? { died: true, wellbeingEnd: 0 } : {},
+    );
+    expect(r.room.viewFor(r.host).chicks![r.ids[0]!]).toEqual({ wellbeing: 0, alive: false });
+  });
+
+  it('Zwischenstand überlebt einen Neustart samt Stimmen', () => {
+    const { room, cuckoo, fosters } = toVoting();
+    room.castVote(fosters[0]!, cuckoo);
+    const restored = Room.restore(
+      RoomSnapshotSchema.parse(JSON.parse(JSON.stringify(room.snapshot()))),
+      deps,
+    );
+    expect(restored.phase).toBe('voting');
+    expect(restored.viewFor(fosters[0]!).you.vote).toBe(cuckoo);
   });
 });

@@ -271,14 +271,41 @@ export const GameConfigSchema = z
           unit: 's',
           description: 'So lange darf ein Bedürfnis dringend sein, bevor es schadet.',
         }),
-        neglectDamagePerSecond: num(0.01, 0, 0.2, {
+        neglectDamagePerSecond: num(0.02, 0, 0.2, {
           label: 'Schaden durch Vernachlässigung',
           unit: '/s',
           step: 0.001,
         }),
-        heat: needSchema('Hitze', 0.012),
-        restless: needSchema('Unruhe', 0.01),
-        tired: needSchema('Müdigkeit', 0.008),
+        recoveryPerSecond: num(0.003, 0, 0.1, {
+          label: 'Erholung',
+          unit: '/s',
+          step: 0.001,
+          description: 'So schnell steigt das Befinden, wenn kein Bedürfnis drückt.',
+        }),
+        contentLevel: num(0.3, 0, 1, {
+          label: 'Zufrieden unter',
+          step: 0.05,
+          description: 'Liegen alle Bedürfnisse darunter, erholt sich das Küken.',
+        }),
+        satisfiedLevel: num(0.05, 0, 0.5, {
+          label: 'Gestillt unter',
+          step: 0.01,
+          description: 'Pflege darunter ist übertrieben und schadet.',
+        }),
+        wrongCareMaxLevel: num(0.3, 0, 1, {
+          label: 'Falsche Pflege unter',
+          step: 0.05,
+          description:
+            'Pflege für ein Bedürfnis unter diesem Pegel, während ein anderes dringend ist, gilt als falsch.',
+        }),
+        initialMax: num(0.3, 0, 1, {
+          label: 'Startwert höchstens',
+          step: 0.05,
+          description: 'Bedürfnisse starten zufällig zwischen 0 und diesem Wert.',
+        }),
+        heat: needSchema('Hitze', 0.03),
+        restless: needSchema('Unruhe', 0.025),
+        tired: needSchema('Müdigkeit', 0.02),
         hunger: needSchema('Hunger', 0.01),
         bored: needSchema('Langeweile', 0.01),
       },
@@ -297,12 +324,12 @@ export const GameConfigSchema = z
 
     sabotage: group(
       {
-        wrongCareHarmPerSecond: num(0.02, 0, 0.5, {
+        wrongCareHarmPerSecond: num(0.03, 0, 0.5, {
           label: 'Schaden falsche Pflege',
           unit: '/s',
           step: 0.005,
         }),
-        overcareHarmPerSecond: num(0.03, 0, 0.5, {
+        overcareHarmPerSecond: num(0.04, 0, 0.5, {
           label: 'Schaden übertriebene Pflege',
           unit: '/s',
           step: 0.005,
@@ -392,6 +419,11 @@ export const GameConfigSchema = z
 
     peek: group(
       {
+        sampleIntervalMs: int(1000, 250, 5000, {
+          label: 'Aufzeichnung alle',
+          unit: 'ms',
+          description: 'Takt der lückenlosen Aufzeichnung (Spick-Station).',
+        }),
         enabled: bool(true, { label: 'Spick-Station aktiv' }),
         allowSelf: bool(false, { label: 'Eigene Station wählbar' }),
       },
@@ -412,6 +444,10 @@ export const GameConfigSchema = z
           .default('runoff')
           .meta({ label: 'Bei Gleichstand', description: 'Stichwahl oder niemand beschuldigt.' }),
         maxRunoffs: int(1, 0, 3, { label: 'Höchstens Stichwahlen' }),
+        revealAnimationMs: int(3000, 500, 10000, {
+          label: 'Enthüllung (Umdrehen)',
+          unit: 'ms',
+        }),
       },
       { label: 'Abstimmung' },
     ),
