@@ -8,6 +8,8 @@ import { DeviceSensors } from './sensors/DeviceSensors.ts';
 import { SensorsContext } from './sensors/hooks.ts';
 import './styles.css';
 import { unlockSound } from './art/sound.ts';
+import { BotManager } from './bots/BotManager.ts';
+import { BotContext, botCountFromUrl } from './bots/context.ts';
 
 const root = createRoot(document.getElementById('root')!);
 
@@ -36,6 +38,9 @@ function startGame() {
   });
   client.start();
   const sensors = new DeviceSensors();
+  // Bot-Modus (?bots=N): simulierte Mitspieler im selben Browser.
+  const botCount = botCountFromUrl();
+  const bots = botCount ? new BotManager(botCount, wsUrl, client) : null;
 
   // Handys schlafen ein oder frieren Tabs ein: beim Zurückkommen sofort neu verbinden und Uhr abgleichen.
   document.addEventListener('visibilitychange', () => {
@@ -52,7 +57,9 @@ function startGame() {
     <StrictMode>
       <GameClientContext.Provider value={client}>
         <SensorsContext.Provider value={sensors}>
-          <App />
+          <BotContext.Provider value={bots}>
+            <App />
+          </BotContext.Provider>
         </SensorsContext.Provider>
       </GameClientContext.Provider>
     </StrictMode>,

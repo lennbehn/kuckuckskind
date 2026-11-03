@@ -1,5 +1,13 @@
 import { useEffect, useRef } from 'react';
-import { holderOf, msLeft, positionAt, type CareKind, type RoomView } from '@kuckuckskind/shared';
+import {
+  holderOf,
+  msLeft,
+  phoneHeldBy,
+  positionAt,
+  type CareKind,
+  type Character,
+  type RoomView,
+} from '@kuckuckskind/shared';
 import { useGameClient, useServerNow } from '../net/hooks.ts';
 import { useSensors, useSensorsState } from '../sensors/hooks.ts';
 import { useChickRunner, useRunnerView } from '../game/runnerHost.tsx';
@@ -7,6 +15,8 @@ import { useCareInput, type ManualCare } from '../game/useCareInput.ts';
 import { Chick, NeedHints } from './game/Chick.tsx';
 import { useStable } from './hatching/useStable.ts';
 import { chime } from '../art/sound.ts';
+import { useBots } from '../bots/context.ts';
+import type { ChickRunner } from '../game/ChickRunner.ts';
 import { ChickArt } from '../art/ChickArt.tsx';
 import { MOODS } from '../art/chickParams.ts';
 
@@ -29,6 +39,7 @@ const CARE_LABEL: Record<CareKind, string> = {
  */
 export function Rounds({ room }: { room: RoomView }) {
   const client = useGameClient();
+  const bots = useBots();
   const now = useServerNow(100);
   const tl = room.timeline;
   const owner = room.you.playerId;
@@ -60,6 +71,31 @@ export function Rounds({ room }: { room: RoomView }) {
         <p className="lead">Gleich beginnt Runde 1 – mit deinem eigenen Küken.</p>
         <div className="countdown">{formatSeconds(left)}</div>
       </div>
+    );
+  } else if (pos.stage === 'station' && bots) {
+    // Bot-Modus: Dieses Gerät spielt die Station, an der sein Spieler am Tisch säße.
+    const held = phoneHeldBy(owner, pos.round, seating);
+    const own = held === owner;
+    body = (
+      <Station
+        key={held}
+        room={room}
+        runnerOverride={own ? undefined : bots.runnerOf(held)}
+        character={own ? undefined : (bots.characterOf(held) ?? undefined)}
+        greeting={
+          own ? (
+            <>Dein eigenes Küken, {ownerName}.</>
+          ) : (
+            <>
+              Du pflegst das Küken von <strong>{nameOf(held)}</strong>. Dein eigenes ist gerade bei{' '}
+              {nameOf(holderOf(owner, pos.round, seating))}.
+            </>
+          )
+        }
+        round={pos.round}
+        left={left}
+        paused={pos.paused}
+      />
     );
   } else if (pos.stage === 'station') {
     const holder = holderOf(owner, pos.round, seating);
@@ -105,7 +141,16 @@ export function Rounds({ room }: { room: RoomView }) {
           />
         </svg>
         <p className="lead">
-          Gib mich nach links an <strong>{nameOf(next)}</strong>.
+          {bots ? (
+            <>
+              Bot-Modus: Als Nächstes pflegst du das Küken von{' '}
+              <strong>{nameOf(phoneHeldBy(owner, pos.nextRound, seating))}</strong>.
+            </>
+          ) : (
+            <>
+              Gib mich nach links an <strong>{nameOf(next)}</strong>.
+            </>
+          )}
         </p>
         <div className="countdown small">{formatSeconds(left)}</div>
       </div>
@@ -152,14 +197,20 @@ function Station({
   round,
   left,
   paused,
+  runnerOverride,
+  character,
 }: {
   room: RoomView;
   greeting: React.ReactNode;
   round: number;
   left: number;
   paused: boolean;
+  /** Bot-Modus: Küken eines Bots, das dieses Gerät gerade pflegt. */
+  runnerOverride?: ChickRunner | null;
+  character?: Character;
 }) {
-  const runner = useChickRunner();
+  const ownRunner = useChickRunner();
+  const runner = runnerOverride === undefined ? ownRunner : runnerOverride;
   const view = useRunnerView(runner);
   const sensors = useSensors();
   const sensorState = useSensorsState();
@@ -176,7 +227,8 @@ function Station({
     k === 'feed' ||
     k === 'sing';
   const liked =
-    !!view && view.input.active.some((k) => room.you.chick?.character.likes.includes(k));
+    !!view &&
+    view.input.active.some((k) => (character ?? room.you.chick?.character)?.likes.includes(k));
 
   return (
     <div className="stage station">

@@ -11,6 +11,7 @@ import { useGameClient } from '../net/hooks.ts';
 import { joinUrl } from '../routing.ts';
 import { EggNest } from '../art/EggNest.tsx';
 import { PresetPicker } from './PresetPicker.tsx';
+import { useBots } from '../bots/context.ts';
 
 const CARE_LABELS: Record<CareKind, string> = {
   blow: 'Pusten (Hitze)',
@@ -36,6 +37,7 @@ const STATION_CHOICES = [30, 45, 60, 90, 120];
 
 export function Lobby({ room }: { room: RoomView }) {
   const client = useGameClient();
+  const bots = useBots();
   const me = room.you.playerId;
   const isHost = room.hostId === me;
   const host = room.players.find((p) => p.id === room.hostId);
@@ -54,6 +56,11 @@ export function Lobby({ room }: { room: RoomView }) {
     <main className="paper">
       <h1 className="small">Kuckuckskind</h1>
       <EggNest count={room.players.length} />
+      {bots && (
+        <p className="note">
+          Bot-Modus: {bots.count} Bots spielen mit. Dieses Gerät spielt alle deine Stationen.
+        </p>
+      )}
       <RoomCode code={room.code} />
 
       <section className="card">

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useSyncExternalStore } from 'react';
 import type { RoomView } from '@kuckuckskind/shared';
 import { useGameClient } from '../net/hooks.ts';
+import { useBots } from '../bots/context.ts';
 import { ChickRunner, type RunnerStorage, type RunnerView } from './ChickRunner.ts';
 
 const storage: RunnerStorage = {
@@ -68,6 +69,13 @@ export function ChickRunnerHost({ room, children }: { room: RoomView; children: 
     setEntry({ key, runner: created });
   }
   const runner = entry.key === key ? entry.runner : null;
+
+  // Bot-Modus: Bots pflegen das eigene Küken, wenn sie es halten.
+  const bots = useBots();
+  useEffect(() => {
+    bots?.setHumanRunner(runner);
+    return () => bots?.setHumanRunner(null);
+  }, [bots, runner]);
 
   // Alle 100 ms weiterrechnen.
   useEffect(() => {
