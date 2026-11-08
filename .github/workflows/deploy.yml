@@ -1,0 +1,62 @@
+name: Deploy
+
+on:
+  # Jeder Merge auf main geht automatisch nach dev.
+  push:
+    branches: [main]
+  # prod (oder dev erneut) nur von Hand.
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: Zielumgebung
+        type: choice
+        options: [dev, prod]
+        default: dev
+
+permissions:
+  contents: read
+  id-token: write # für AWS OIDC
+
+concurrency:
+  group: deploy-${{ inputs.stage || 'dev' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Das GitHub-Environment enthält die Variablen und (für prod) die Freigabe-Regel.
+    environment: ${{ inputs.stage || 'dev' }}
+    env:
+      STAGE: ${{ inputs.stage || 'dev' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm build
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: eu-central-1
+
+      - name: CDK deploy
+        working-directory: infra
+        run: |
+          ARGS=(-c stage=$STAGE)
+          if [ -n "${{ vars.DOMAIN_NAME }}" ]; then
+            ARGS+=(-c ${STAGE}DomainName=${{ vars.DOMAIN_NAME }} -c ${STAGE}CertificateArn=${{ vars.CERTIFICATE_ARN }})
+          fi
+          pnpm cdk deploy "Kuckuckskind-$STAGE" --require-approval never --outputs-file cdk-outputs.json "${ARGS[@]}"
+
+      - name: Adresse anzeigen
+        working-directory: infra
+        run: |
+          URL=$(node -e "const o=require('./cdk-outputs.json');console.log(o['Kuckuckskind-'+process.env.STAGE].Url)")
+          echo "### Kuckuckskind $STAGE: $URL" >> "$GITHUB_STEP_SUMMARY"
+          curl -sf --retry 10 --retry-delay 6 --retry-all-errors "$URL/healthz"

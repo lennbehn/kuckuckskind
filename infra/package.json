@@ -1,0 +1,24 @@
+{
+  "name": "@kuckuckskind/infra",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "cdk": "cdk",
+    "synth": "cdk synth --quiet",
+    "deploy:dev": "cdk deploy Kuckuckskind-dev --require-approval never -c stage=dev",
+    "deploy:prod": "cdk deploy Kuckuckskind-prod --require-approval never -c stage=prod",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.275.0",
+    "constructs": "^10.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "aws-cdk": "^2.1147.0",
+    "tsx": "^4.23.15",
+    "vitest": "^5.1.0"
+  }
+}
