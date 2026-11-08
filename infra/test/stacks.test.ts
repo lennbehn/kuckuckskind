@@ -3,7 +3,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { GameStack } from '../lib/game-stack.ts';
-import { GithubOidcStack } from '../lib/github-oidc-stack.ts';
+import { GithubOidcStack, githubSubjects } from '../lib/github-oidc-stack.ts';
 import { stageConfig } from '../lib/stage-config.ts';
 
 const env = { account: '123456789012', region: 'eu-central-1' };
@@ -94,6 +94,57 @@ describe('GithubOidcStack', () => {
               StringLike: {
                 'token.actions.githubusercontent.com:sub': [
                   'repo:lennbehn/kuckuckskind:environment:dev',
+                ],
+              },
+            }),
+          }),
+        ],
+      }),
+    });
+  });
+});
+
+describe('GitHub-OIDC-Claims', () => {
+  it('akzeptiert altes und neues Format (mit unveränderlichen IDs)', () => {
+    expect(
+      githubSubjects({
+        repo: 'lennbehn/kuckuckskind',
+        environments: ['dev', 'prod'],
+        ownerId: '194357753',
+        repoId: '1443920140',
+      }),
+    ).toEqual([
+      'repo:lennbehn/kuckuckskind:environment:dev',
+      'repo:lennbehn@194357753/kuckuckskind@1443920140:environment:dev',
+      'repo:lennbehn/kuckuckskind:environment:prod',
+      'repo:lennbehn@194357753/kuckuckskind@1443920140:environment:prod',
+    ]);
+  });
+
+  it('ohne IDs nur das alte Format', () => {
+    expect(githubSubjects({ repo: 'a/b', environments: ['dev'] })).toEqual([
+      'repo:a/b:environment:dev',
+    ]);
+  });
+
+  it('landet so in der Vertrauensregel der Rolle', () => {
+    const app = new cdk.App();
+    const stack = new GithubOidcStack(app, 'OidcIds', {
+      env,
+      repo: 'lennbehn/kuckuckskind',
+      environments: ['dev'],
+      ownerId: '194357753',
+      repoId: '1443920140',
+    });
+    Template.fromStack(stack).hasResourceProperties('AWS::IAM::Role', {
+      AssumeRolePolicyDocument: Match.objectLike({
+        Statement: [
+          Match.objectLike({
+            Condition: Match.objectLike({
+              StringLike: {
+                'token.actions.githubusercontent.com:sub': [
+                  'repo:lennbehn/kuckuckskind:environment:dev',
+                  'repo:lennbehn@194357753/kuckuckskind@1443920140:environment:dev',
                 ],
               },
             }),

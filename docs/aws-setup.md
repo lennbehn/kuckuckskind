@@ -67,3 +67,12 @@ aws cognito-idp admin-add-user-to-group --user-pool-id <UserPoolId> --username <
 Fargate-Task 0,25 vCPU/0,5 GB ≈ 9 €/Monat, ALB ≈ 18 €/Monat, Rest (CloudFront, S3,
 DynamoDB, Secrets Manager) wenige Cent bis 1 €. Wer dev zwischen Testabenden nicht braucht:
 `pnpm cdk destroy Kuckuckskind-dev -c stage=dev`.
+
+## Fehler „Not authorized to perform sts:AssumeRoleWithWebIdentity“
+
+GitHub hat 2026 das Format des OIDC-Claims `sub` geändert: Für Repos, die nach dem 15.07.2026 angelegt
+(oder umbenannt/übertragen) wurden, enthält er unveränderliche IDs –
+`repo:<owner>@<ownerId>/<repo>@<repoId>:environment:<env>`. Die Rolle akzeptiert beide Formate; die IDs
+stehen in `infra/cdk.json` (`githubOwnerId`, `githubRepoId`). Bei einem anderen Repo dort anpassen
+(IDs: `https://api.github.com/repos/<owner>/<repo>` → `id` und `owner.id`) und den Stack
+`Kuckuckskind-GithubOidc` erneut deployen.

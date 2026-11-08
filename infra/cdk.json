@@ -2,6 +2,8 @@
   "app": "npx tsx bin/app.ts",
   "context": {
     "githubRepo": "lennbehn/kuckuckskind",
+    "githubOwnerId": "194357753",
+    "githubRepoId": "1443920140",
     "@aws-cdk/aws-iam:minimizePolicies": true
   }
 }

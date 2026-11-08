@@ -30,6 +30,8 @@ for (const stage of ['dev', 'prod'] as StageName[]) {
 new GithubOidcStack(app, 'Kuckuckskind-GithubOidc', {
   env,
   repo: ctx('githubRepo') ?? 'lennbehn/kuckuckskind',
+  ownerId: ctx('githubOwnerId'),
+  repoId: ctx('githubRepoId'),
   environments: (ctx('oidcEnvironments') ?? 'dev,prod').split(','),
   existingProviderArn: ctx('existingOidcProviderArn'),
 });
