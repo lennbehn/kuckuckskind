@@ -375,7 +375,7 @@ export const GameConfigSchema = z
         ),
         cover: group(
           {
-            minTouchPoints: int(4, 1, 10, { label: 'Mindestens Finger' }),
+            minTouchPoints: int(3, 1, 10, { label: 'Mindestens Finger' }),
             minContactRadiusPx: num(25, 0, 200, { label: 'Kontaktfläche ab (Radius)', unit: 'px' }),
             holdMs: int(500, 0, 5000, { label: 'Halten', unit: 'ms' }),
           },

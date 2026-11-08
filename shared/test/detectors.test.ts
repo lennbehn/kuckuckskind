@@ -113,9 +113,10 @@ describe('Zudecken', () => {
 
   it('viele Finger lange genug = zugedeckt', () => {
     const d = new CoverDetector(cover);
-    expect(d.update(0, [finger, finger, finger]).covered).toBe(false);
-    expect(d.update(10, Array(4).fill(finger))).toMatchObject({ covered: true, method: 'touches' });
-    expect(d.update(10 + cover.holdMs, Array(4).fill(finger)).completed).toBe(true);
+    expect(cover.minTouchPoints).toBe(3);
+    expect(d.update(0, [finger, finger]).covered).toBe(false);
+    expect(d.update(10, Array(3).fill(finger))).toMatchObject({ covered: true, method: 'touches' });
+    expect(d.update(10 + cover.holdMs, Array(3).fill(finger)).completed).toBe(true);
   });
 
   it('große Kontaktfläche zählt auch', () => {
@@ -127,7 +128,7 @@ describe('Zudecken', () => {
     const d = new CoverDetector(cover);
     d.update(0, Array(5).fill(finger));
     d.update(cover.holdMs - 10, []);
-    const s = d.update(cover.holdMs + 10, Array(4).fill(finger));
+    const s = d.update(cover.holdMs + 10, Array(3).fill(finger));
     expect(s.heldMs).toBe(0);
     expect(s.completed).toBe(false);
     expect(s.maxTouches).toBe(5);
