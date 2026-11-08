@@ -41,7 +41,11 @@ export function useCareInput(
     const rock = new RockDetector(config.sensors.rock, stored.rockScale ?? 1);
     const cover = new CoverDetector({
       ...config.sensors.cover,
-      minTouchPoints: stored.coverMinTouchPoints ?? config.sensors.cover.minTouchPoints,
+      // Gemerkte Fingerzahl des Geräts, aber nie strenger als die aktuelle Konfiguration.
+      minTouchPoints: Math.min(
+        stored.coverMinTouchPoints ?? config.sensors.cover.minTouchPoints,
+        config.sensors.cover.minTouchPoints,
+      ),
     });
     let blowing = false;
     let rockZone: ReturnType<typeof rock.push>['zone'] = 'still';

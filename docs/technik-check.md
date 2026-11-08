@@ -14,7 +14,7 @@ schlüpfen alle Küken zum selben Server-Zeitpunkt; danach kurz die geheime Roll
 3. **Wiegen:** Die ersten `hatching.rockCalibrationMs` Bewegung bestimmen die Empfindlichkeit
    (Median der Bewegung → Mitte des sanften Bands, begrenzt auf `rockScaleMin…Max`). Danach
    `hatching.rockGentleMs` im sanften Band. „Zu wild“ wird angezeigt.
-4. **Zudecken:** ≥ `sensors.cover.minTouchPoints` Finger oder Kontakt-Radius ≥ `minContactRadiusPx`
+4. **Zudecken:** ≥ `sensors.cover.minTouchPoints` Finger (Standard 3) oder Kontakt-Radius ≥ `minContactRadiusPx`
    für `hatching.coverHoldMs`. Klappt es nicht, reichen nach `fallbackAfterSeconds`
    `coverFallbackTouchPoints` Finger (Wert wird fürs Gerät gemerkt).
 5. **Ersatz:** Fehlt ein Sensor oder ist er nicht erlaubt, steht der Grund am Ei und es gibt

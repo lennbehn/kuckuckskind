@@ -5,7 +5,7 @@ import { MOODS, type Mood } from '../art/chickParams.ts';
 import { EggArt } from '../art/EggArt.tsx';
 import { EggNest } from '../art/EggNest.tsx';
 import { NeedIcon } from '../art/NeedIcon.tsx';
-import { Chick } from './game/Chick.tsx';
+import { Chick, NeedHints } from './game/Chick.tsx';
 
 const config = resolveConfig();
 
@@ -60,6 +60,7 @@ export function Gallery() {
       <section className="card stack">
         <h2>Lebendig</h2>
         <Chick state={state} config={config} hurting={hurting} liked={liked} size={240} />
+        <NeedHints state={state} config={config} />
         {slider('Befinden', w, setW)}
         {slider('Hitze', heat, setHeat)}
         {slider('Müdigkeit', tired, setTired)}

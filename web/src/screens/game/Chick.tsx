@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { NEED_FOR_CARE, type ChickState, type GameConfig } from '@kuckuckskind/shared';
+import { NEED_FOR_CARE, type ChickState, type GameConfig, type Need } from '@kuckuckskind/shared';
 import { ChickArt } from '../../art/ChickArt.tsx';
 import { chickParamsFor, needTints, type ChickParams } from '../../art/chickParams.ts';
 import { NeedIcon } from '../../art/NeedIcon.tsx';
@@ -98,7 +98,19 @@ export function Chick({
 const moodWord = (w: number) =>
   w > 0.75 ? 'zufrieden' : w > 0.45 ? 'etwas unglücklich' : 'traurig';
 
-/** Hinweisfeld: Symbole für spürbare Bedürfnisse, Größe nach Stärke (keine genauen Zahlen). */
+/** Was der Halter tun soll – steht unter dem Symbol im Hinweisfeld. */
+export const NEED_ACTION: Record<Need, string> = {
+  heat: 'Pusten',
+  restless: 'Wiegen',
+  tired: 'Zudecken',
+  hunger: 'Füttern',
+  bored: 'Vorsingen',
+};
+
+/**
+ * Hinweisfeld: Symbole für spürbare Bedürfnisse, Größe nach Stärke (keine genauen Zahlen),
+ * darunter die passende Pflege.
+ */
 export function NeedHints({ state, config }: { state: ChickState; config: GameConfig }) {
   const needs = config.care.activeKinds
     .map((k) => NEED_FOR_CARE[k])
@@ -109,7 +121,10 @@ export function NeedHints({ state, config }: { state: ChickState; config: GameCo
         <span className="hint">Alles ruhig.</span>
       ) : (
         needs.map((n) => (
-          <NeedIcon key={n} need={n} strength={Math.min(1, (state.needs[n] - 0.35) / 0.65)} />
+          <figure key={n} className="need-hint">
+            <NeedIcon need={n} strength={Math.min(1, (state.needs[n] - 0.35) / 0.65)} />
+            <figcaption>{NEED_ACTION[n]}</figcaption>
+          </figure>
         ))
       )}
     </div>

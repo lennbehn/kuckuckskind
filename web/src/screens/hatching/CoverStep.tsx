@@ -26,7 +26,11 @@ export function CoverStep({ config, onDone }: StepProps) {
   const done = useLatest(onDone);
   const minTouchPoints = fewerFingers
     ? config.hatching.coverFallbackTouchPoints
-    : (stored.coverMinTouchPoints ?? config.sensors.cover.minTouchPoints);
+    : // Gemerkte Fingerzahl des Geräts, aber nie strenger als die aktuelle Konfiguration.
+      Math.min(
+        stored.coverMinTouchPoints ?? config.sensors.cover.minTouchPoints,
+        config.sensors.cover.minTouchPoints,
+      );
 
   useEffect(() => {
     const el = area.current;
@@ -75,7 +79,7 @@ export function CoverStep({ config, onDone }: StepProps) {
   return (
     <StepLayout
       title="Das Ei ist müde."
-      text={`Deck es mit der ganzen Hand zu${fewerFingers ? ` (${minTouchPoints} Finger reichen)` : ''} und halte still.`}
+      text={`Deck es mit der Hand zu (mindestens ${minTouchPoints} Finger) und halte still.`}
       meter={held}
       meterLabel={
         fingers > 0 ? `${fingers} ${fingers === 1 ? 'Finger' : 'Finger'} erkannt` : undefined
