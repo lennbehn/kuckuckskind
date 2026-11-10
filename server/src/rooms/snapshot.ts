@@ -44,6 +44,15 @@ export const MatchStateSchema = z.object({
     })
     .nullable(),
   result: GameResultSchema.nullable(),
+  /** Eule (Pflegeelternteil) und wen sie beobachtet – geheim. */
+  owlId: z.string().nullable().default(null),
+  owlChoice: z.string().nullable().default(null),
+  /** Falkenblicke je Person (verdient durch sehr gute Pflege). */
+  glances: z.record(z.string(), z.number().int().nonnegative()).default({}),
+  /** Insgesamt verdiente Falkenblicke je Person (Obergrenze je Partie). */
+  glancesEarned: z.record(z.string(), z.number().int().nonnegative()).default({}),
+  /** Je Küken die Runden, nach denen eine graue Kuckucksfeder gefallen ist. */
+  feathers: z.record(z.string(), z.array(z.number().int())).default({}),
 });
 export type MatchState = z.infer<typeof MatchStateSchema>;
 

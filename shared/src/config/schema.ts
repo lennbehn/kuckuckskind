@@ -108,6 +108,9 @@ export const MODULE_IDS = [
   'difficulty',
   'whisper',
   'family',
+  'falcon',
+  'feathers',
+  'owl',
 ] as const;
 export const ModuleIdSchema = z.enum(MODULE_IDS);
 export type ModuleId = z.infer<typeof ModuleIdSchema>;
@@ -198,6 +201,78 @@ const modulesSchema = group(
         }),
       },
       { label: 'Familienmodus' },
+    ),
+    falcon: group(
+      {
+        enabled: bool(true, {
+          label: 'Falkenblick aktiv',
+          description:
+            'Wer eine Station sehr gut pflegt, darf später kurz sehen, was das Küken eines Mitspielers gerade braucht.',
+        }),
+        maxLoss: num(0.03, 0, 0.5, {
+          label: 'Verdient bei Verlust höchstens',
+          step: 0.01,
+          description:
+            'Befindens-Verlust in der Station, bis zu dem sie als „sehr gut gepflegt“ gilt.',
+        }),
+        maxMistakeSeconds: num(2, 0, 30, {
+          label: 'Erlaubte Fehlpflege',
+          unit: 's',
+          description: 'Höchstens so lange übertriebene, falsche oder zu wilde Pflege.',
+        }),
+        minCareSeconds: num(4, 0, 60, {
+          label: 'Mindestens gepflegt',
+          unit: 's',
+          description: 'So lange muss richtig gepflegt worden sein (nicht nur Glück).',
+        }),
+        maxTokens: int(1, 1, 5, {
+          label: 'Höchstens Blicke je Person und Partie',
+          description: 'So viele Blicke kann eine Person in einer Partie insgesamt verdienen.',
+        }),
+        durationSeconds: num(8, 3, 30, { label: 'Dauer eines Blicks', unit: 's' }),
+        needThreshold: num(0.35, 0, 1, {
+          label: 'Bedürfnis zählt ab',
+          step: 0.05,
+          description: 'Ab diesem Pegel zeigt der Blick das Bedürfnis als „braucht gerade“.',
+        }),
+      },
+      { label: 'Falkenblick' },
+    ),
+    feathers: group(
+      {
+        enabled: bool(false, {
+          label: 'Kuckucksfedern aktiv',
+          description:
+            'Sabotiert der Kuckuck stark, liegt danach manchmal eine graue Feder im Nest – die nächste Person sieht sie.',
+        }),
+        minLoss: num(0.18, 0, 1, {
+          label: 'Feder ab Verlust',
+          step: 0.01,
+          description: 'Befindens-Verlust in der Station, ab dem eine Feder fallen kann.',
+        }),
+        cuckooChance: num(0.15, 0, 1, { label: 'Wahrscheinlichkeit beim Kuckuck', step: 0.05 }),
+        fosterChance: num(0.1, 0, 1, {
+          label: 'Wahrscheinlichkeit bei Pflegeeltern',
+          step: 0.05,
+          description: 'Über 0 wird die Feder vom Beweis zum Hinweis.',
+        }),
+        showSeconds: num(12, 3, 60, {
+          label: 'Sichtbar zu Beginn der nächsten Station',
+          unit: 's',
+        }),
+      },
+      { label: 'Kuckucksfedern' },
+    ),
+    owl: group(
+      {
+        enabled: bool(false, {
+          label: 'Eule aktiv',
+          description:
+            'Ein Pflegeelternteil beobachtet heimlich einen Mitspieler und erfährt, ob dieser viel, mittel oder wenig Schaden angerichtet hat.',
+        }),
+        minPlayers: int(4, 3, 12, { label: 'Eule ab Spielern' }),
+      },
+      { label: 'Eule' },
     ),
   },
   { label: 'Module' },

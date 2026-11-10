@@ -1,5 +1,10 @@
 import { createHash, randomInt } from 'node:crypto';
-import { ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH, type ModuleId } from '@kuckuckskind/shared';
+import {
+  ROOM_CODE_ALPHABET,
+  ROOM_CODE_LENGTH,
+  type ModuleId,
+  type ServerMessage,
+} from '@kuckuckskind/shared';
 import type { Logger } from '../log.ts';
 import { RoomError } from './errors.ts';
 import { Room, type Player, type RoomDeps } from './room.ts';
@@ -25,7 +30,12 @@ export interface RoomManagerOptions {
   /** Wird bei jeder Raumänderung aufgerufen (zum Senden). */
   onRoomChanged?: (room: Room) => void;
   onPlayerRemoved?: (room: Room, player: Player, reason: 'left' | 'kicked' | 'expired') => void;
+  /** Nachricht an das Handy genau eines Spielers. */
+  onNotify?: (room: Room, player: Player, message: ServerMessage) => void;
 }
+
+/** Module, die gebaut sind (in der Lobby schaltbar). */
+export const BUILT_MODULES: readonly ModuleId[] = ['falcon', 'feathers', 'owl'];
 
 /** Verwaltet alle Räume eines Server-Prozesses und die Zuordnung Sitzung → Spieler. */
 export class RoomManager {
@@ -63,7 +73,12 @@ export class RoomManager {
         if (room.phase === 'lobby') this.sessions.delete(player.tokenHash);
         this.opts.onPlayerRemoved?.(room, player, reason);
       },
-      availableModules: this.opts.availableModules ?? [],
+      availableModules: this.opts.availableModules ?? BUILT_MODULES,
+      notify: (room, playerId, message) => {
+        const player = room.players.get(playerId);
+        if (player && this.rooms.get(room.code) === room)
+          this.opts.onNotify?.(room, player, message);
+      },
     };
   }
 

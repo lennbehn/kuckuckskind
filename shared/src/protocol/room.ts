@@ -199,6 +199,23 @@ export const RoomViewSchema = z.object({
       .optional(),
     /** Eigene Stimme (geheim). */
     vote: z.string().nullable().optional(),
+    /** Nur für die Eule: wen sie beobachten kann, wen sie gewählt hat, ab der Heimkehr das Urteil. */
+    owl: z
+      .object({
+        options: z.array(z.string()),
+        choice: z.string().nullable(),
+        verdict: z
+          .object({ targetId: z.string(), level: z.enum(['high', 'medium', 'low']) })
+          .nullable(),
+      })
+      .optional(),
+    /**
+     * Falkenblicke der Person, die dieses Handy gerade hält (nicht des Eigentümers) –
+     * der Blick wird auf dem Handy eingesetzt, das man gerade in der Hand hat.
+     */
+    holderGlances: z.number().int().nonnegative().optional(),
+    /** Runden, nach denen eine graue Kuckucksfeder aus diesem Nest gefallen ist. */
+    feathers: z.array(z.number().int()).optional(),
   }),
 });
 export type RoomView = z.infer<typeof RoomViewSchema>;

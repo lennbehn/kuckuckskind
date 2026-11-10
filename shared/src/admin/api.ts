@@ -135,6 +135,11 @@ export const RoomDebugSchema = z.object({
           died: z.boolean(),
         }),
       ),
+      /** Hinweis-Module: Eule, Falkenblicke, Kuckucksfedern im Nest dieses Kükens. */
+      isOwl: z.boolean().default(false),
+      owlChoice: z.string().nullable().default(null),
+      glances: z.number().int().default(0),
+      feathers: z.array(z.number().int()).default([]),
     }),
   ),
   result: GameResultSchema.nullable(),

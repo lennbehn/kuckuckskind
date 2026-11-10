@@ -2,6 +2,14 @@ import { randomInt, randomUUID } from 'node:crypto';
 import {
   assignRoles,
   createRng,
+  earnsFalcon,
+  featherFalls,
+  harmByHolder,
+  holderOf,
+  owlVerdict,
+  phoneHeldBy,
+  pickOwl,
+  NEED_FOR_CARE,
   createTimeline,
   decideVote,
   generateHints,
@@ -36,6 +44,7 @@ import {
   type Role,
   type RoomPhase,
   type RoomView,
+  type ServerMessage,
   type StationStats,
   type Timeline,
 } from '@kuckuckskind/shared';
@@ -61,6 +70,8 @@ export interface RoomDeps {
   onPlayerRemoved(room: Room, player: Player, reason: 'left' | 'kicked' | 'expired'): void;
   /** Module, die gebaut sind und eingeschaltet werden dürfen. */
   availableModules: readonly ModuleId[];
+  /** Nachricht nur an das Handy eines Spielers (z. B. Ergebnis eines Falkenblicks). */
+  notify(room: Room, playerId: string, message: ServerMessage): void;
 }
 
 const CARE_DE: Record<CareKind, string> = {
@@ -373,6 +384,10 @@ export class Room {
               wellbeingEnd: st.wellbeingEnd,
               died: st.died,
             })),
+          isOwl: m?.owlId === id,
+          owlChoice: m?.owlId === id ? (m?.owlChoice ?? null) : null,
+          glances: m?.glances[id] ?? 0,
+          feathers: m?.feathers[id] ?? [],
         };
       }),
       result: m?.result ?? null,
@@ -446,6 +461,7 @@ export class Room {
       this.seating.map((id) => [id, rollCharacter(this.config, rng)]),
     );
     const chickSeeds = Object.fromEntries(this.seating.map((id) => [id, rng.int(0, 2 ** 31 - 1)]));
+    const owlId = pickOwl(roles, this.config, rng);
     const peekDeadline = revealEndsAt + (this.config.peek.enabled ? t.peekChoiceSeconds * 1000 : 0);
     this.match = {
       seed,
@@ -463,6 +479,11 @@ export class Room {
       voting: null,
       reveal: null,
       result: null,
+      owlId,
+      owlChoice: null,
+      glances: {},
+      glancesEarned: {},
+      feathers: {},
     };
     this.phase = 'peekChoice';
     this.armRevealTimer();
@@ -506,11 +527,32 @@ export class Room {
       `${this.players.get(ownerId)?.name ?? ownerId} hat die Spick-Station gewählt`,
       ownerId,
     );
-    if (this.seating.every((id) => m.peekChoices[id] || this.peekOptionsFor(id).length === 0)) {
-      this.finishPeek();
-    } else {
-      this.changed();
+    this.finishPeekIfAllChosen();
+  }
+
+  /** Eule: heimlich einen Mitspieler zum Beobachten wählen (während der Spick-Wahl). */
+  chooseOwl(ownerId: string, targetId: string) {
+    this.requirePhase('peekChoice');
+    const m = this.match as MatchState;
+    if (m.owlId !== ownerId) throw new RoomError('not_allowed', 'Nur die Eule darf das.');
+    if (this.deps.now() < m.hatch.revealEndsAt) throw new RoomError('not_allowed', 'Noch nicht.');
+    if (targetId === ownerId || !this.seating.includes(targetId)) {
+      throw new RoomError('bad_message', 'Diesen Mitspieler kannst du nicht wählen.');
     }
+    m.owlChoice = targetId;
+    this.log('owl', 'Die Eule hat gewählt');
+    this.finishPeekIfAllChosen();
+  }
+
+  /** Haben alle ihre Spick-Station (und die Eule ihr Ziel) gewählt, beginnen die Runden. */
+  private finishPeekIfAllChosen() {
+    const m = this.match as MatchState;
+    const peekDone =
+      !this.config.peek.enabled ||
+      this.seating.every((id) => m.peekChoices[id] || this.peekOptionsFor(id).length === 0);
+    const owlDone = !m.owlId || m.owlChoice !== null;
+    if (peekDone && owlDone) this.finishPeek();
+    else this.changed();
   }
 
   /** Spick-Wahl abschließen (fehlende zufällig) und den Rundentakt starten. */
@@ -529,6 +571,10 @@ export class Room {
         const options = this.peekOptionsFor(owner);
         if (!m.peekChoices[owner] && options.length) m.peekChoices[owner] = rng.pick(options);
       }
+    }
+    if (m.owlId && !m.owlChoice) {
+      const others = this.seating.filter((id) => id !== m.owlId);
+      if (others.length) m.owlChoice = createRng(m.seed + 2).pick(others);
     }
     const t = this.config.timing;
     m.timeline = createTimeline({
@@ -571,7 +617,69 @@ export class Room {
       return;
     }
     const at = nextBoundary(m.timeline, now);
-    if (at !== null) this.cancelTimer = this.deps.schedule(at, () => this.armTimer());
+    if (at !== null) {
+      this.cancelTimer = this.deps.schedule(at, () => {
+        this.armTimer();
+        // Neue Station: Handys brauchen die Falkenblicke ihres neuen Halters.
+        if (this.phase === 'rounds') this.changed();
+      });
+    }
+  }
+
+  /** Runde, in der gerade eine Station läuft (nicht pausiert), sonst null. */
+  private currentStationRound(): { round: number; endsAt: number } | null {
+    const tl = this.match?.timeline;
+    if (this.phase !== 'rounds' || !tl) return null;
+    const pos = positionAt(tl, this.deps.now());
+    return pos.stage === 'station' && !pos.paused ? { round: pos.round, endsAt: pos.endsAt } : null;
+  }
+
+  /**
+   * Falkenblick: Die Person, die das Handy von `phoneOwnerId` gerade hält, schaut, was das
+   * Küken in den Händen von `targetId` braucht. Ergebnis geht nur an dieses Handy und wird
+   * während der Dauer jede Sekunde aktualisiert.
+   */
+  useGlance(phoneOwnerId: string, targetId: string) {
+    const m = this.match;
+    const station = this.currentStationRound();
+    if (!m || !station) throw new RoomError('not_allowed', 'Nur während einer Station.');
+    if (!this.config.modules.falcon.enabled)
+      throw new RoomError('not_allowed', 'Falkenblick ist aus.');
+    const holder = holderOf(phoneOwnerId, station.round, this.seating);
+    if ((m.glances[holder] ?? 0) < 1) throw new RoomError('not_allowed', 'Kein Falkenblick übrig.');
+    if (targetId === holder || !this.seating.includes(targetId)) {
+      throw new RoomError('bad_message', 'Diesen Mitspieler kannst du nicht beobachten.');
+    }
+    m.glances[holder] = (m.glances[holder] ?? 0) - 1;
+    this.log(
+      'falcon',
+      `${this.players.get(holder)?.name ?? holder} hat einen Falkenblick eingesetzt`,
+      holder,
+    );
+    const until = Math.min(
+      this.deps.now() + this.config.modules.falcon.durationSeconds * 1000,
+      station.endsAt,
+    );
+    const chickOwnerId = phoneHeldBy(targetId, station.round, this.seating);
+    const push = () => {
+      if (this.match !== m) return;
+      const report = m.reports[chickOwnerId];
+      const threshold = this.config.modules.falcon.needThreshold;
+      const needs = this.config.care.activeKinds
+        .map((k) => NEED_FOR_CARE[k])
+        .filter((n) => (report?.needs[n] ?? 0) >= threshold)
+        .sort((a, b) => (report?.needs[b] ?? 0) - (report?.needs[a] ?? 0));
+      this.deps.notify(this, phoneOwnerId, {
+        type: 'glance.result',
+        targetId,
+        chickOwnerId,
+        needs,
+        until,
+      });
+      if (this.deps.now() + 1000 < until) this.deps.schedule(this.deps.now() + 1000, push);
+    };
+    push();
+    this.changed();
   }
 
   /** Laufender Stand vom Handy des Eigentümers (nur das eigene Küken). */
@@ -602,8 +710,38 @@ export class Room {
         ownerId,
       );
     }
+    const first = !byRound[String(stats.round)];
     byRound[String(stats.round)] = kept;
+    if (first) this.applyClues(ownerId, stats);
     this.changed();
+  }
+
+  /** Nach einer Station: Falkenblick verdient? Graue Kuckucksfeder gefallen? */
+  private applyClues(ownerId: string, stats: StationStats) {
+    const m = this.match as MatchState;
+    const holder = holderOf(ownerId, stats.round, this.seating);
+    if (holder === ownerId) return; // am eigenen Küken gibt es weder Blick noch Feder
+    // Höchstens `maxTokens` Blicke je Person und Partie.
+    if (
+      earnsFalcon(stats, this.config) &&
+      (m.glancesEarned[holder] ?? 0) < this.config.modules.falcon.maxTokens
+    ) {
+      m.glancesEarned[holder] = (m.glancesEarned[holder] ?? 0) + 1;
+      m.glances[holder] = (m.glances[holder] ?? 0) + 1;
+    }
+    const holderRole = m.roles[holder];
+    // Eigener, reproduzierbarer Zufall je Küken und Runde.
+    const rng = createRng(
+      m.seed + 7919 * (this.seating.indexOf(ownerId) + 1) + 104729 * (stats.round + 1),
+    );
+    if (holderRole && featherFalls(stats, holderRole, this.config, rng)) {
+      (m.feathers[ownerId] ??= []).push(stats.round);
+      this.log(
+        'feather',
+        `Graue Feder im Nest von ${this.players.get(ownerId)?.name ?? ownerId} (Runde ${stats.round + 1})`,
+        ownerId,
+      );
+    }
   }
 
   /** Endstand eines Kükens: letzte Meldung oder letzte Station. */
@@ -839,6 +977,30 @@ export class Room {
     }
     if (PUBLIC_CHICK_PHASES.includes(this.phase)) out.story = this.storyFor(playerId);
     if (this.phase === 'voting') out.vote = m.votes[playerId] ?? null;
+
+    // Eule: nur in der Spick-Wahl und ab der Heimkehr (nicht, während das Handy wandert).
+    if (
+      m.owlId === playerId &&
+      (this.phase === 'peekChoice' || PUBLIC_CHICK_PHASES.includes(this.phase))
+    ) {
+      out.owl = {
+        options: this.seating.filter((id) => id !== playerId),
+        choice: m.owlChoice,
+        verdict:
+          PUBLIC_CHICK_PHASES.includes(this.phase) && m.owlChoice
+            ? {
+                targetId: m.owlChoice,
+                level: owlVerdict(m.owlChoice, playerId, harmByHolder(m.stations, this.seating)),
+              }
+            : null,
+      };
+    }
+    // Falkenblicke der Person, die dieses Handy in der laufenden Station hält.
+    const station = this.currentStationRound();
+    if (station && this.config.modules.falcon.enabled) {
+      out.holderGlances = m.glances[holderOf(playerId, station.round, this.seating)] ?? 0;
+    }
+    if (m.feathers[playerId]?.length) out.feathers = [...m.feathers[playerId]];
     return out;
   }
 

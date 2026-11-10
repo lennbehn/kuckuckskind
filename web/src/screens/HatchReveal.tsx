@@ -66,6 +66,11 @@ export function HatchReveal({
             ? 'Sabotiere leise und lass dich nicht erwischen. Dein eigenes Küken soll glücklich sein.'
             : 'Pass gut auf jedes Küken auf – und finde heraus, wer der Kuckuck ist.'}
         </p>
+        {!cuckoo && room.you.owl && (
+          <p className="lead">
+            <strong>🦉 Und du bist die Eule:</strong> Gleich darfst du heimlich jemanden beobachten.
+          </p>
+        )}
       </div>
     );
   }

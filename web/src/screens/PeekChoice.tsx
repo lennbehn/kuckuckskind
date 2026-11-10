@@ -47,6 +47,28 @@ export function PeekChoice({ room }: { room: RoomView }) {
         ))}
       </ul>
       {choice && <p className="note">Gewählt: {nameOf(choice)}. Warte auf die anderen …</p>}
+      {room.you.owl && (
+        <section className="card owl-card stack">
+          <h2>🦉 Du bist die Eule</h2>
+          <p className="hint">
+            Wen beobachtest du heimlich? Bei der Heimkehr erfährst du, ob diese Person den Küken
+            viel, mittel oder wenig geschadet hat. Ob du es verrätst, entscheidest du.
+          </p>
+          <ul className="choice-list">
+            {room.you.owl.options.map((id) => (
+              <li key={id}>
+                <button
+                  className={id === room.you.owl?.choice ? 'primary' : ''}
+                  aria-pressed={id === room.you.owl?.choice}
+                  onClick={() => client.chooseOwl(id)}
+                >
+                  {nameOf(id)}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <p className="hint">
         {room.peek?.chosenCount ?? 0} von {room.players.length} haben gewählt · noch {secondsLeft} s
       </p>

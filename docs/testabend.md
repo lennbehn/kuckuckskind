@@ -73,6 +73,7 @@ erlauben, Seite neu laden. Bis dahin gibt es Ersatz-Tasten.
 
 - Wer war Kuckuck, wurde er erkannt, wer hat gewonnen? (Ergebnis steht im Admin.)
 - War es zu leicht/zu schwer? Haben die vagen Hinweise geholfen? War die Spick-Station nützlich?
+- Hinweis-Module (Falkenblick, Kuckucksfedern, Eule): Welche Kombination hat sich gut angefühlt?
 - Welche Pflege hat auf welchem Gerät nicht geklappt (Gerät + Browser)?
 - Passende Preset-Änderung direkt als neue Version speichern.
 

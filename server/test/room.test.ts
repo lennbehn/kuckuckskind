@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { emptyStats, holderOf, positionAt, type StationStats } from '@kuckuckskind/shared';
+import {
+  emptyStats,
+  holderOf,
+  positionAt,
+  type ServerMessage,
+  type StationStats,
+} from '@kuckuckskind/shared';
 import { Room, type RoomDeps } from '../src/rooms/room.ts';
 import { RoomSnapshotSchema } from '../src/rooms/snapshot.ts';
 import { FakeClock } from './fake-clock.ts';
@@ -7,6 +13,7 @@ import { FakeClock } from './fake-clock.ts';
 let clock: FakeClock;
 let changes: number;
 let removed: { id: string; reason: string }[];
+let notified: { playerId: string; message: ServerMessage }[];
 let deps: RoomDeps;
 
 function newRoom() {
@@ -41,12 +48,14 @@ beforeEach(() => {
   clock = new FakeClock();
   changes = 0;
   removed = [];
+  notified = [];
   deps = {
     now: clock.now,
     schedule: clock.schedule,
     onChange: () => changes++,
     onPlayerRemoved: (_r, p, reason) => removed.push({ id: p.id, reason }),
-    availableModules: [],
+    availableModules: ['falcon', 'feathers', 'owl'],
+    notify: (_r, playerId, message) => notified.push({ playerId, message }),
   };
 });
 
@@ -497,5 +506,182 @@ describe('Abstimmung und Enthüllung', () => {
     );
     expect(restored.phase).toBe('voting');
     expect(restored.viewFor(fosters[0]!).you.vote).toBe(cuckoo);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hinweis-Module: Eule, Falkenblick, Kuckucksfedern
+// ---------------------------------------------------------------------------
+
+describe('Eule', () => {
+  function toPeek(n = 4) {
+    const r = roomWith(n);
+    r.room.updateSettings(r.host, { modules: { owl: true } });
+    hatchAllEggs(r.room, r.host);
+    clock.advance(r.room.hatch!.revealEndsAt - clock.now());
+    const owl = r.room.match!.owlId!;
+    return { ...r, owl };
+  }
+
+  it('gibt es ab 4 Spielern; nur die Eule sieht ihre Auswahl', () => {
+    const { room, ids, owl } = toPeek();
+    expect(owl).toBeTruthy();
+    expect(room.roleOf(owl)).toBe('foster');
+    expect(room.viewFor(owl).you.owl?.options).toHaveLength(3);
+    for (const id of ids.filter((x) => x !== owl)) expect(room.viewFor(id).you.owl).toBeUndefined();
+
+    const small = roomWith(3);
+    small.room.updateSettings(small.host, { modules: { owl: true } });
+    hatchAllEggs(small.room, small.host);
+    expect(small.room.match!.owlId).toBeNull();
+
+    // Ohne Häkchen in der Lobby keine Eule.
+    const off = roomWith(5);
+    hatchAllEggs(off.room, off.host);
+    expect(off.room.match!.owlId).toBeNull();
+  });
+
+  it('Runden beginnen erst, wenn auch die Eule gewählt hat', () => {
+    const { room, ids, owl } = toPeek();
+    for (const id of ids) room.choosePeek(id, room.peekOptionsFor(id)[0]!);
+    expect(room.phase).toBe('peekChoice');
+    expect(() =>
+      room.chooseOwl(
+        ids.find((x) => x !== owl)!,
+        owl,
+      ),
+    ).toThrow(/Nur die Eule/);
+    expect(() => room.chooseOwl(owl, owl)).toThrow();
+    room.chooseOwl(
+      owl,
+      ids.find((x) => x !== owl)!,
+    );
+    expect(room.phase).toBe('rounds');
+  });
+
+  it('Urteil erst ab der Heimkehr – ehrlich nach Schaden, nie die Rolle', () => {
+    const { room, host, ids, owl } = toPeek();
+    const target = ids.find((x) => x !== owl)!;
+    room.chooseOwl(owl, target);
+    clock.advance(room.match!.peekDeadline - clock.now());
+    const tl = room.timeline!;
+    // Der beobachtete Mitspieler richtet an jedem fremden Küken großen Schaden an.
+    for (let r = 0; r < tl.rounds; r++) {
+      for (const o of room.seating) {
+        const loss = holderOf(o, r, room.seating) === target ? 0.3 : 0.02;
+        room.recordStation(o, stats(r, { loss }));
+      }
+    }
+    expect(room.viewFor(owl).you.owl).toBeUndefined(); // während der Runden nicht
+    clock.advance(tl.t0 - clock.now() + tl.rounds * (tl.stationMs + tl.handoverMs));
+    const v = room.viewFor(owl);
+    expect(v.you.owl?.verdict).toEqual({ targetId: target, level: 'high' });
+    expect(JSON.stringify(v.you.owl)).not.toMatch(/cuckoo|foster/);
+    expect(host).toBeTruthy();
+  });
+});
+
+describe('Falkenblick', () => {
+  const good = { reliefMs: { blow: 8000 }, loss: 0.01 };
+
+  function inRounds(n = 4) {
+    const r = roomWith(n);
+    startRounds(r.room, r.host);
+    clock.advance(r.room.timeline!.t0 - clock.now() + 1000); // Runde 0 läuft
+    return r;
+  }
+
+  it('wer eine fremde Station sehr gut pflegt, verdient einen Blick (höchstens wie eingestellt)', () => {
+    const { room } = inRounds();
+    const owner = room.seating[0]!;
+    const holder1 = holderOf(owner, 1, room.seating);
+    room.recordStation(owner, stats(0, good)); // eigenes Küken: kein Blick
+    expect(room.match!.glances[owner]).toBeUndefined();
+    room.recordStation(owner, stats(1, good));
+    expect(room.match!.glances[holder1]).toBe(1);
+    room.recordStation(room.seating[3]!, stats(2, good));
+    expect(Math.max(...Object.values(room.match!.glances))).toBeLessThanOrEqual(1);
+    room.recordStation(room.seating[1]!, stats(1, { loss: 0.2 }));
+    expect(room.match!.glances[holderOf(room.seating[1]!, 1, room.seating)] ?? 0).toBe(0);
+  });
+
+  it('Blick zeigt dem Handy des Halters, was das Küken beim Ziel braucht – live, dann vorbei', () => {
+    const { room } = inRounds();
+    const [a, b, c] = room.seating as [string, string, string];
+    // In Runde 0 hält jeder sein eigenes Handy. a hat einen Blick und schaut zu b.
+    room.match!.glances[a] = 1;
+    expect(room.viewFor(a).you.holderGlances).toBe(1);
+    room.reportChick(b, {
+      at: clock.now(),
+      round: 0,
+      needs: { heat: 0.8, restless: 0.1, tired: 0.5, hunger: 0, bored: 0 },
+      urgentMs: { heat: 0, restless: 0, tired: 0, hunger: 0, bored: 0 },
+      wellbeing: 1,
+      alive: true,
+      stationLoss: 0,
+    });
+    room.useGlance(a, b);
+    const first = notified.at(-1)!;
+    expect(first.playerId).toBe(a);
+    expect(first.message).toMatchObject({
+      type: 'glance.result',
+      targetId: b,
+      chickOwnerId: b,
+      needs: ['heat', 'tired'],
+    });
+    expect(room.viewFor(a).you.holderGlances).toBe(0);
+    expect(() => room.useGlance(a, c)).toThrow(/Kein Falkenblick/);
+    const count = notified.length;
+    clock.advance(3000);
+    expect(notified.length).toBeGreaterThan(count); // laufende Aktualisierung
+    clock.advance(60_000);
+    const after = notified.length;
+    clock.advance(5000);
+    expect(notified.length).toBe(after); // Blick ist vorbei
+  });
+
+  it('nicht auf sich selbst und nicht außerhalb einer Station', () => {
+    const { room } = inRounds();
+    const a = room.seating[0]!;
+    room.match!.glances[a] = 1;
+    expect(() => room.useGlance(a, a)).toThrow();
+    const tl = room.timeline!;
+    clock.advance(tl.t0 + tl.stationMs + 100 - clock.now()); // Weitergabe
+    expect(() => room.useGlance(a, room.seating[1]!)).toThrow(/Station/);
+  });
+});
+
+describe('Kuckucksfedern', () => {
+  it('fallen nach starker Sabotage des Kuckucks; bei fosterChance 0 nie bei Pflegeeltern', () => {
+    const { room, host } = roomWith(4);
+    room.applyPreset({
+      modules: { feathers: { enabled: true, cuckooChance: 1, fosterChance: 0 } },
+    });
+    startRounds(room, host);
+    const seating = room.seating;
+    const cuckoo = seating.find((id) => room.roleOf(id) === 'cuckoo')!;
+    for (let r = 1; r < 4; r++)
+      for (const o of seating) room.recordStation(o, stats(r, { loss: 0.2 }));
+    const feathers = room.match!.feathers;
+    for (const [owner, rounds] of Object.entries(feathers)) {
+      for (const r of rounds) expect(holderOf(owner, r, seating)).toBe(cuckoo);
+    }
+    expect(Object.values(feathers).flat().length).toBe(3); // drei fremde Stationen des Kuckucks
+    const owner = Object.keys(feathers)[0]!;
+    expect(room.viewFor(owner).you.feathers).toEqual(feathers[owner]);
+  });
+
+  it('überleben einen Neustart mit Eule und Blicken', () => {
+    const { room, host } = roomWith(4);
+    startRounds(room, host);
+    room.match!.glances[room.seating[0]!] = 1;
+    room.match!.feathers[room.seating[1]!] = [2];
+    const restored = Room.restore(
+      RoomSnapshotSchema.parse(JSON.parse(JSON.stringify(room.snapshot()))),
+      deps,
+    );
+    expect(restored.match!.glances).toEqual(room.match!.glances);
+    expect(restored.match!.feathers).toEqual(room.match!.feathers);
+    expect(restored.match!.owlId).toBe(room.match!.owlId);
   });
 });
