@@ -11,6 +11,15 @@
  */
 import {
   createRng,
+  earnsFalcon,
+  featherFalls,
+  harmByHolder,
+  holderOf,
+  mistakeMs,
+  owlVerdict,
+  phoneHeldBy,
+  pickOwl,
+  type StationStats,
   decideVote,
   peekOptions,
   peekRound,
@@ -30,6 +39,11 @@ const games = Number(arg('games', '300'));
 const players = Number(arg('players', '5'));
 const noise = Number(arg('noise', '0.08'));
 const config = resolveConfig(JSON.parse(arg('json', '{}')) as ConfigOverride);
+// Wie stark ein Hinweis den Verdacht am Tisch erhöht (Spick-Verlust liegt typisch bei 0–0,35).
+const featherWeight = Number(arg('featherWeight', '1')); // eine Feder ist (fast) ein Beweis
+const falconWeight = Number(arg('falconWeight', '0.15'));
+const owlWeight = Number(arg('owlWeight', '0.12'));
+const stat = { feathers: 0, glances: 0, glanceHits: 0, owlHits: 0 };
 const rounds = totalRounds(config, players);
 
 let cuckooWins = 0;
@@ -57,6 +71,69 @@ for (let g = 0; g < games; g++) {
     const r = peekRound(owner, target, seating, rounds);
     const loss = r === null ? 0 : (stats[owner]?.[r]?.loss ?? 0);
     suspicion[target] = Math.max(suspicion[target] ?? 0, loss);
+  }
+
+  const stationMs = config.timing.stationSeconds * 1000;
+  // Kuckucksfedern: Die nächste Person sieht die Feder und weiß, wer das Küken vorher hatte.
+  for (const owner of seating) {
+    (stats[owner] ?? []).forEach((st, r) => {
+      const holder = holderOf(owner, r, seating);
+      if (holder === owner) return;
+      if (featherFalls(st, roles[holder]!, config, rng)) {
+        stat.feathers++;
+        suspicion[holder] = (suspicion[holder] ?? 0) + featherWeight;
+      }
+    });
+  }
+  // Falkenblick: Wer eine fremde Station sehr gut pflegt, schaut in einer späteren Station bei
+  // einem zufälligen Mitspieler hin. Erwischt wird, wer in dem Moment falsch pflegt.
+  const tokens: Record<string, number> = {};
+  const earned: Record<string, number> = {};
+  for (let r = 0; r < rounds; r++) {
+    for (const owner of seating) {
+      const st = stats[owner]?.[r];
+      const holder = holderOf(owner, r, seating);
+      // Blick einsetzen, falls vorhanden.
+      if ((tokens[holder] ?? 0) > 0 && r > 0) {
+        tokens[holder]!--;
+        stat.glances++;
+        const target = rng.pick(seating.filter((id) => id !== holder));
+        const watched = stats[phoneHeldBy(target, r, seating)]?.[r];
+        const window = config.modules.falcon.durationSeconds * 1000;
+        // Fehlpflege-Anteil der Station; je länger der Blick, desto eher fällt sie auf
+        // (bei 10 s Blick zählt der Anteil voll, darunter anteilig).
+        const frac = watched ? Math.min(1, mistakeMs(watched) / stationMs) : 0;
+        const p = Math.min(1, frac * 2 * Math.min(1, window / 10_000));
+        if (rng.next() < p) {
+          stat.glanceHits++;
+          suspicion[target] = (suspicion[target] ?? 0) + falconWeight;
+        }
+      }
+      if (
+        st &&
+        holder !== owner &&
+        earnsFalcon(st, config) &&
+        (earned[holder] ?? 0) < config.modules.falcon.maxTokens
+      ) {
+        earned[holder] = (earned[holder] ?? 0) + 1;
+        tokens[holder] = (tokens[holder] ?? 0) + 1;
+      }
+    }
+  }
+  // Eule: beobachtet einen zufälligen Mitspieler und erzählt es am Tisch.
+  const owl = pickOwl(roles, config, rng);
+  if (owl) {
+    const target = rng.pick(seating.filter((id) => id !== owl));
+    const asRecord: Record<string, Record<string, StationStats>> = Object.fromEntries(
+      seating.map((o) => [
+        o,
+        Object.fromEntries((stats[o] ?? []).map((st) => [String(st.round), st])),
+      ]),
+    );
+    const level = owlVerdict(target, owl, harmByHolder(asRecord, seating));
+    if (level === 'high') suspicion[target] = (suspicion[target] ?? 0) + owlWeight;
+    if (level === 'low') suspicion[target] = (suspicion[target] ?? 0) - owlWeight / 2;
+    if (roles[target] === 'cuckoo' && level === 'high') stat.owlHits++;
   }
   const votes = new Map<string, string>();
   for (const voter of seating) {
@@ -118,3 +195,6 @@ console.log(`Küken gestorben:        ${pct(deaths, games * players)}`);
 console.log(`Glücklich (Pflegeeltern-Küken): ${pct(happyFoster, fosterChicks)}`);
 console.log(`Glücklich (Kuckucks-Küken):     ${pct(happyCuckoo, cuckooChicks)}`);
 console.log(`Befinden am Ende (Mittel): ${avg.toFixed(2)}`);
+console.log(
+  `Hinweise je Partie: Federn ${(stat.feathers / games).toFixed(2)}, Falkenblicke ${(stat.glances / games).toFixed(2)} (Treffer ${(stat.glanceHits / games).toFixed(2)}), Eule trifft Kuckuck mit „viel“: ${pct(stat.owlHits, games)}`,
+);

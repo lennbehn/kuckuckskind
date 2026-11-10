@@ -980,3 +980,56 @@ h1 {
 .gallery .chick {
   align-self: center;
 }
+
+/* --- Hinweis-Module: Feder, Falkenblick, Eule ------------------------------- */
+
+.feather-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border: 1.5px dashed #6f7a8f;
+  border-radius: 16px;
+  background: rgb(138 147 163 / 0.15);
+  text-align: left;
+  animation: pop 0.5s ease-out both;
+}
+
+.feather-notice p {
+  margin: 0;
+}
+
+.falcon-button {
+  background: rgb(255 252 242 / 0.8);
+  font-weight: 700;
+}
+
+.falcon-choose,
+.falcon-result {
+  width: min(100%, 360px);
+  padding: 10px 14px;
+  border: 1.5px solid var(--pencil);
+  border-radius: 16px;
+  background: rgb(255 252 242 / 0.9);
+  text-align: left;
+}
+
+.falcon-result p,
+.falcon-choose p {
+  margin: 4px 0;
+}
+
+.falcon-head {
+  font-weight: 700;
+  color: var(--pencil);
+}
+
+.falcon-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.owl-card {
+  border-style: dashed;
+}

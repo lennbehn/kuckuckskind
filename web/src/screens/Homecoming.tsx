@@ -1,4 +1,5 @@
 import {
+  OWL_TEXT,
   describePeek,
   type GameConfig,
   type RoomView,
@@ -45,6 +46,19 @@ export function Homecoming({ room }: { room: RoomView }) {
         ))}
         {!story && <p className="hint">Einen Moment …</p>}
       </section>
+
+      {room.you.owl?.verdict && (
+        <section className="card owl-card story">
+          <h2>🦉 Deine Beobachtung als Eule</h2>
+          <p className="quote">
+            <strong>{nameOf(room.you.owl.verdict.targetId)}</strong>{' '}
+            {OWL_TEXT[room.you.owl.verdict.level]}.
+          </p>
+          <p className="hint">
+            Nur du siehst das. Ob du es erzählst – und ob man dir glaubt –, liegt bei dir.
+          </p>
+        </section>
+      )}
 
       {story?.peek && (
         <section className="card story">

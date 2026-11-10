@@ -31,6 +31,9 @@ const MODULE_LABELS: Record<ModuleId, string> = {
   difficulty: 'Steigender Schwierigkeitsgrad',
   whisper: 'Zuflüstern (KI)',
   family: 'Familienmodus',
+  falcon: 'Falkenblick',
+  feathers: 'Kuckucksfedern',
+  owl: 'Eule',
 };
 
 const STATION_CHOICES = [30, 45, 60, 90, 120];

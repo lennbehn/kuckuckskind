@@ -15,6 +15,7 @@ import {
   type GameControl,
   type HostSettings,
   type RoomView,
+  type ServerMessage,
   type StationStats,
 } from '@kuckuckskind/shared';
 import type { TokenStorage } from './session.ts';
@@ -37,7 +38,11 @@ export interface GameState {
   clock: ClockSample | null;
   lastError: { code: ErrorCode | 'offline'; message: string; at: number } | null;
   closedReason: 'left' | 'kicked' | 'expired' | null;
+  /** Letztes Ergebnis eines Falkenblicks auf diesem Handy (läuft bis `until`). */
+  glance: GlanceResult | null;
 }
+
+export type GlanceResult = Extract<ServerMessage, { type: 'glance.result' }>;
 
 /** Was der Client von einem WebSocket braucht (für Tests austauschbar). */
 export interface SocketLike {
@@ -76,6 +81,7 @@ export class GameClient {
     clock: null,
     lastError: null,
     closedReason: null,
+    glance: null,
   };
   private readonly listeners = new Set<() => void>();
   private socket: SocketLike | null = null;
@@ -202,6 +208,8 @@ export class GameClient {
         return this.set({ room: null, closedReason: msg.reason });
       case 'error':
         return this.set({ lastError: { code: msg.code, message: msg.message, at: this.now() } });
+      case 'glance.result':
+        return this.set({ glance: msg });
       case 'module.event':
         return;
     }
@@ -294,6 +302,14 @@ export class GameClient {
   }
   choosePeek(targetId: string) {
     this.act({ type: 'peek.choose', targetId });
+  }
+  /** Eule: heimlich einen Mitspieler beobachten. */
+  chooseOwl(targetId: string) {
+    this.act({ type: 'owl.choose', targetId });
+  }
+  /** Falkenblick: schauen, was das Küken in den Händen von `targetId` gerade braucht. */
+  useGlance(targetId: string) {
+    this.act({ type: 'glance.use', targetId });
   }
   vote(targetId: string | null) {
     this.act({ type: 'vote.cast', targetId });

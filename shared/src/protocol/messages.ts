@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CareKindSchema } from '../config/schema.ts';
+import { CareKindSchema, NeedSchema } from '../config/schema.ts';
 import { StationStatsSchema } from '../chick/simulation.ts';
 import { DeviceLevelsSchema } from '../admin/api.ts';
 import {
@@ -116,6 +116,15 @@ export const ChickStationSchema = z.object({
   stats: StationStatsSchema,
 });
 
+/** Nur Eule: heimlich einen Mitspieler beobachten (während der Spick-Wahl). */
+export const OwlChooseSchema = z.object({ type: z.literal('owl.choose'), targetId: z.string() });
+
+/**
+ * Falkenblick einsetzen: Die Person, die dieses Handy gerade hält, schaut kurz, was das
+ * Küken in den Händen von `targetId` gerade braucht.
+ */
+export const GlanceUseSchema = z.object({ type: z.literal('glance.use'), targetId: z.string() });
+
 /** Stimme abgeben oder ändern; null = zurückziehen. */
 export const VoteCastSchema = z.object({
   type: z.literal('vote.cast'),
@@ -151,6 +160,8 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   ChickReportMessageSchema,
   ChickStationSchema,
   VoteCastSchema,
+  OwlChooseSchema,
+  GlanceUseSchema,
   LobbyPresetSchema,
   DeviceLevelsMessageSchema,
   ModuleClientMessageSchema,
@@ -217,12 +228,27 @@ export const RoomClosedSchema = z.object({
   reason: z.enum(['left', 'kicked', 'expired']),
 });
 
+/**
+ * Ergebnis eines Falkenblicks (wird während der Dauer laufend aktualisiert): was das Küken
+ * in den Händen von `targetId` gerade braucht. Nur an das Handy, auf dem der Blick lief.
+ */
+export const GlanceResultSchema = z.object({
+  type: z.literal('glance.result'),
+  targetId: z.string(),
+  chickOwnerId: z.string(),
+  /** Bedürfnisse über der Schwelle, dringendstes zuerst; leer = braucht gerade nichts. */
+  needs: z.array(NeedSchema),
+  /** Server-Zeit, bis zu der der Blick gilt. */
+  until: z.number(),
+});
+
 export const ServerMessageSchema = z.discriminatedUnion('type', [
   WelcomeSchema,
   TimePongSchema,
   ErrorMessageSchema,
   RoomStateSchema,
   RoomClosedSchema,
+  GlanceResultSchema,
   ModuleServerEventSchema,
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;

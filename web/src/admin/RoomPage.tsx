@@ -141,6 +141,15 @@ export function RoomPage({ code }: { code: string }) {
                           '–'
                         )}
                         <div className="hint">Spickt bei: {nameOf(p.peekChoice)}</div>
+                        {p.isOwl && (
+                          <div className="hint">🦉 Eule, beobachtet: {nameOf(p.owlChoice)}</div>
+                        )}
+                        {p.glances > 0 && <div className="hint">🦅 Falkenblicke: {p.glances}</div>}
+                        {p.feathers.length > 0 && (
+                          <div className="hint">
+                            Federn im Nest nach Runde {p.feathers.map((r) => r + 1).join(', ')}
+                          </div>
+                        )}
                         {d.phase === 'voting' && (
                           <div className="hint">Stimme: {nameOf(p.vote)}</div>
                         )}

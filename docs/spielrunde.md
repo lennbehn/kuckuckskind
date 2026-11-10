@@ -78,6 +78,8 @@ Regelbasiert aus den Stationsstatistiken: Tod, Schütteln, Vernachlässigung je 
 | Befinden aller Küken | alle              | ab Heimkehr              |
 | alle Rollen          | alle              | Enthüllung               |
 
+Eule, Falkenblick und Kuckucksfedern: siehe [hinweis-module.md](hinweis-module.md).
+
 ## Balancing
 
 ```bash
@@ -89,8 +91,9 @@ Simuliert Partien mit Bots (gute Pflegeeltern, leiser Kuckuck mit zufälliger St
 nichts tun, spät reagieren, falsche oder übertriebene Pflege). Abstimmung grob modelliert: Alle
 Spick-Ergebnisse werden am Tisch geteilt, plus Rauschen.
 
-Stand mit den Standardwerten (300 Partien, 5 Spieler): **Kuckuck gewinnt ≈ 53 %**, enttarnt ≈ 48 %,
+Stand ohne Hinweis-Module (300 Partien, 5 Spieler): **Kuckuck gewinnt ≈ 53 %**, enttarnt ≈ 48 %,
 kein Küken stirbt. Das Modell ist für die Pflegeeltern pessimistisch: In ≈ ⅓ der Partien
 wählt niemand den Kuckuck als Spick-Station, und vage Hinweise sowie das Beobachten am Tisch
 fließen nicht ein. Am Testabend realistisch eher 40–45 %. Stellschrauben im Admin-Bereich:
 Bedürfnis-Tempo, Sabotage-Stärken, Sabotage-Limit, Vernachlässigungsschwelle.
+Mit Falkenblick (Standard) ≈ 44 %; Werte je Modul in [hinweis-module.md](hinweis-module.md).

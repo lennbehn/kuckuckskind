@@ -140,6 +140,11 @@ export class BotManager {
     return bot ? bot.runner : null;
   }
 
+  /** Verbindung des Bot-Handys `ownerId` (Falkenblick und Federn laufen über das gehaltene Handy). */
+  clientOf(ownerId: string): GameClient | null {
+    return this.botById(ownerId)?.client ?? null;
+  }
+
   /** Charakter eines Bot-Kükens (für Herzchen bei Lieblingspflege). */
   characterOf(ownerId: string) {
     return this.botById(ownerId)?.client.getState().room?.you.chick?.character ?? null;
@@ -200,11 +205,20 @@ export class BotManager {
       }
       case 'peekChoice': {
         const options = room.you.peekOptions ?? [];
-        if (!room.hatch || !options.length || room.you.peekChoice) break;
+        if (!room.hatch) break;
         const wait = Math.max(0, room.hatch.revealEndsAt - bot.client.serverNow());
-        this.later(bot, `game:peek:${gameKey}`, wait + 500, wait + 3000, () =>
-          bot.client.choosePeek(this.rng.pick(options)),
-        );
+        if (options.length && !room.you.peekChoice) {
+          this.later(bot, `game:peek:${gameKey}`, wait + 500, wait + 3000, () =>
+            bot.client.choosePeek(this.rng.pick(options)),
+          );
+        }
+        // Ist der Bot die Eule, beobachtet er jemanden zufällig.
+        const owl = room.you.owl;
+        if (owl && !owl.choice && owl.options.length) {
+          this.later(bot, `game:owl:${gameKey}`, wait + 800, wait + 3500, () =>
+            bot.client.chooseOwl(this.rng.pick(owl.options)),
+          );
+        }
         break;
       }
       case 'voting': {

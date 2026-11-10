@@ -23,9 +23,10 @@ describe('Spielkonfiguration', () => {
     expect(defaultGameConfig.modules.fox.quorumShare).toBeCloseTo(2 / 3);
   });
 
-  it('hat alle Module standardmäßig aus', () => {
+  it('hat nur den Falkenblick standardmäßig an', () => {
+    const on = ['falcon'];
     for (const id of MODULE_IDS) {
-      expect(defaultGameConfig.modules[id].enabled, id).toBe(false);
+      expect(defaultGameConfig.modules[id].enabled, id).toBe(on.includes(id));
     }
   });
 

@@ -47,7 +47,7 @@ describe('Modul-Register', () => {
 
   it('meldet eingeschaltete, aber fehlende Module', () => {
     const reg = new ModuleRegistry();
-    expect(reg.missing(resolveConfig({ modules: { hug: { enabled: true } } }))).toEqual(['hug']);
+    expect(reg.missing(resolveConfig({ modules: { hug: { enabled: true } } }))).toContain('hug');
   });
 
   it('verhindert doppelte Registrierung', () => {

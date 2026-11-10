@@ -80,6 +80,10 @@ export function createApp({
       const conn = bySession.get(player.tokenHash);
       if (conn) send(conn, { type: 'room.closed', reason });
     },
+    onNotify: (_room, player, message) => {
+      const conn = bySession.get(player.tokenHash);
+      if (conn) send(conn, message);
+    },
   });
 
   const adminApi = createAdminApi({ rooms, presets, auth, log });
@@ -247,6 +251,10 @@ export function createApp({
         return room.recordStation(playerId, msg.stats);
       case 'vote.cast':
         return room.castVote(playerId, msg.targetId);
+      case 'owl.choose':
+        return room.chooseOwl(playerId, msg.targetId);
+      case 'glance.use':
+        return room.useGlance(playerId, msg.targetId);
       case 'device.levels':
         return room.setLevels(playerId, msg.levels);
       case 'lobby.preset':

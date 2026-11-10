@@ -17,6 +17,8 @@ import { useStable } from './hatching/useStable.ts';
 import { chime } from '../art/sound.ts';
 import { useBots } from '../bots/context.ts';
 import type { ChickRunner } from '../game/ChickRunner.ts';
+import type { GameClient } from '../net/GameClient.ts';
+import { FalconPanel, FeatherNotice, useClientState } from './game/Clues.tsx';
 import { ChickArt } from '../art/ChickArt.tsx';
 import { MOODS } from '../art/chickParams.ts';
 
@@ -82,6 +84,10 @@ export function Rounds({ room }: { room: RoomView }) {
         room={room}
         runnerOverride={own ? undefined : bots.runnerOf(held)}
         character={own ? undefined : (bots.characterOf(held) ?? undefined)}
+        phone={own ? client : (bots.clientOf(held) ?? client)}
+        holderId={owner}
+        startsAt={pos.startsAt}
+        now={now}
         greeting={
           own ? (
             <>Dein eigenes Küken, {ownerName}.</>
@@ -114,6 +120,10 @@ export function Rounds({ room }: { room: RoomView }) {
         round={pos.round}
         left={left}
         paused={pos.paused}
+        phone={client}
+        holderId={holder}
+        startsAt={pos.startsAt}
+        now={now}
       />
     );
   } else if (pos.stage === 'handover') {
@@ -199,16 +209,27 @@ function Station({
   paused,
   runnerOverride,
   character,
+  phone,
+  holderId,
+  startsAt,
+  now,
 }: {
   room: RoomView;
   greeting: React.ReactNode;
   round: number;
   left: number;
   paused: boolean;
+  /** Client des Handys, das gerade gehalten wird (im Bot-Modus der Bot des Kükens). */
+  phone: GameClient;
+  /** Wer dieses Handy gerade hält. */
+  holderId: string;
+  startsAt: number;
+  now: number;
   /** Bot-Modus: Küken eines Bots, das dieses Gerät gerade pflegt. */
   runnerOverride?: ChickRunner | null;
   character?: Character;
 }) {
+  const phoneRoom = useClientState(phone).room ?? room;
   const ownRunner = useChickRunner();
   const runner = runnerOverride === undefined ? ownRunner : runnerOverride;
   const view = useRunnerView(runner);
@@ -249,8 +270,15 @@ function Station({
       </div>
       {view && <NeedHints state={view.state} config={config} />}
       {view?.input.rough && <p className="problem">Zu wild!</p>}
+      {/* Graue Feder aus der vorigen Station – nur zu Beginn dieser Station sichtbar. */}
+      {round > 0 &&
+        phoneRoom.you.feathers?.includes(round - 1) &&
+        now - startsAt < phoneRoom.config.modules.feathers.showSeconds * 1000 && <FeatherNotice />}
       <p className="lead">{greeting}</p>
       <div className="countdown small">{formatSeconds(left)}</div>
+      {!paused && (
+        <FalconPanel phone={phone} room={phoneRoom} holderId={holderId} serverNow={now} />
+      )}
       {!sensorState.enabled && (
         <button className="primary" onClick={() => void sensors.enable()}>
           Antippen, damit ich dich wieder spüre
